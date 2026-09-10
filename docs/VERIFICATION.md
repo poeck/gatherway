@@ -603,6 +603,176 @@ alarm. This verifies the combined break-room/longer-away scenario; it does not
 independently test break-room rules with a contradictory Available override or
 physical away detection.
 
+### BLE discovery failure and BlueZ 5.87 workaround
+
+Paul reported zero calibration samples and `Bluetooth discovery unavailable` with
+the Pixel within 15–30 cm. Android showed active advertising and the expected
+beacon prefix; the laptop controller was powered. Local service logs recorded
+repeated BlueZ 5.87 daemon segmentation faults. The retained stack metadata
+included `btd_adapter_device_found` and the same non-executable-address failure
+shape documented in [BlueZ issue #2282](https://github.com/bluez/bluez/issues/2282).
+The evidence is consistent with that UUID discovery-filter regression.
+
+Gatherway now performs LE discovery without the affected BlueZ UUID filter and
+filters observations locally to the paired beacon. It waits for controller power
+readiness, requires its own discovery-start acknowledgement rather than another
+client's global discovery state, and retries after startup failure, process exit,
+timeout or discovery loss. It never powers Bluetooth on automatically. Explicit
+stop cancels retries, and old-process callbacks cannot change the replacement
+scanner's health. The old Gatherway scanner child was stopped before live testing;
+the OS Bluetooth package and configuration were not changed.
+
+All 93 automated tests and the desktop syntax check passed. A standalone run of
+the replacement scanner received one paired-phone RSSI value of -69 dBm in 22
+seconds. A subsequent 35-second run produced no matched samples. The Bluetooth
+daemon PID/start time remained unchanged during these workaround checks. This
+supports avoiding the observed crash, but does not establish reliable reception
+or adequate sampling cadence. A desktop restart and further in-app sampling are
+required before calibration can proceed. The phone companion was restarted via
+its UI during diagnosis; no phone build changed. No calibration or movement gates
+were enabled.
+
+### First RSSI shown by the running desktop app
+
+After another initially empty in-app collection attempt, BlueZ was observed
+actively discovering with a cached RSSI for the paired Pixel and no new daemon
+restart. A diagnostic observer received real RSSI and ServiceData changes for that
+same device; the existing parser produced a sample. Paul then reported the desktop
+showing RSSI -70 while Collecting was stopped. Zero stored calibration samples in
+that state is expected. This confirms in-app reception, but sampling cadence and
+room separation remain unverified. The next step is a timed in-app collection,
+not calculating thresholds from the single displayed RSSI value.
+
+### Sparse BLE reception and explicit LE discovery
+
+Paul reported only four calibration samples in two minutes, then enabled
+unrestricted Android battery usage. This cadence is inadequate for presence
+classification. The companion was updated to put its service identity and a
+changing sequence directly in the primary advertisement. Updates run separately
+from HTTP exchanges, with timeout handling and cancellation when the service
+stops. The laptop reader now emits each RSSI observation only once, does not
+refresh cached RSSI timestamps on metadata changes, and ignores invalid RSSI zero.
+
+A two-second advertising interval still yielded one sample in a 45-second trial.
+A 250-ms repeat interval yielded 16 samples in 45 seconds. Paul clarified that he
+started the companion a few seconds after installation, which may explain that
+trial's initial delay. A second trial with the companion already running yielded
+14 samples in 45 seconds, including a 16.9-second gap. Paul confirmed that the
+phone remained in the same room, moved within about one meter, and the companion
+ran continuously. These results show improvement, but do not pass reception
+reliability or room-transition acceptance.
+
+The BlueZ 5.87 client source revealed that `scan on` resets a previously selected
+transport filter. Gatherway now starts with `scan le` explicitly, avoiding its own
+request for interleaved classic inquiry and LE scanning. The UUID-filter workaround
+remains in place. A desktop restart is required to remove the old scan request;
+multiple discovery clients have their filters merged. The Bluetooth daemon stayed
+running during the preceding measurements. Its package and configuration were
+not modified.
+
+All 94 desktop tests, desktop syntax checks, six native unit tests and the Android
+release build passed. The updated APK was installed with pairing preserved.
+The next standalone measurement with explicit LE discovery received 28 samples
+in 45 seconds, with a longest gap of 4.866 seconds and RSSI from -74 to -57 dBm.
+This is useful initial cadence evidence after the correction, not proof of room
+separation or sustained reliability. The running desktop must load the new scanner
+before fresh in-app calibration. Longer continuous reception, screen-off operation,
+room separation and battery use still require device validation. No calibration or
+movement gate was enabled.
+
+### First calibration groups after the scan correction
+
+Paul reported 55 Available-room samples in somewhat less than two minutes, with
+the last displayed RSSI at -72 dBm. He then reported 12 other-room samples in
+approximately three minutes, with the last displayed RSSI at -99 dBm. The latter
+is a weak received signal and may explain reduced reception, but a single final
+RSSI value does not establish distribution separation. The other-room group is
+below the required 15 samples. No thresholds have been calculated from these
+reported results. The current collection action replaces its selected group;
+starting another other-room collection retains the 55 Available-room samples
+but replaces the existing 12 other-room samples.
+
+### Timed calibration replaces the packet-count minimum
+
+At Paul's request, calibration now records two minutes of healthy monitoring per
+group after a 20-second preparation countdown. It stops automatically, can resume
+partial trials, and resets groups explicitly. Fresh phone telemetry, home Wi-Fi,
+advertising, companion operation and scanner readiness are required for valid
+time. Invalid intervals and desktop timer stalls never become no-signal evidence.
+Suspend, pause and disconnect stop collection while preserving accumulated data.
+
+The other-room group can contain fewer than 15 packets or no packets at all.
+The Available-room group still needs regular reception. Time-weighted quantiles
+screen for overlap without letting bursts dominate. Far-room gaps do not mask
+strong observed far-room signals. When far-room RSSI is entirely absent, the exit
+threshold uses a six-dBm margin below the measured in-room boundary. This inferred
+margin still requires physical transition trials. No packet values or monitoring
+duration are reconstructed from Paul's older sample counts.
+
+Automated checks cover zero/sparse far-room reception, in-room reception failure,
+overlap, burst versus duration, missing sensor health, stale telemetry, timer
+stalls, countdown, stop/resume/reset, UI progress and controller movement gating.
+The phone APK did not change for this work. The timed workflow and resulting
+thresholds remain unverified on the actual devices. A desktop restart and fresh
+timed groups are required. No calibration or movement setting was enabled in
+Paul's running installation.
+
+### First timed room trial rejected by separation screening
+
+Paul reported a completed in-room trial with 120 valid seconds, 72 samples,
+98% signal availability and two seconds without recent reception. The other-room
+trial had 120 valid seconds, 38 samples, 70% signal availability and 36 seconds
+without recent reception. Calculate thresholds passed the duration and in-room
+reception checks, then rejected the data with the combined overlap/weak-signal
+error. The displayed final RSSI was -65 dBm; that is a current reading, not a
+stored trial quantile. These summaries do not reveal the actual separation.
+
+Diagnostics now expose the weaker in-room and stronger other-room quantiles,
+their margin and the unchanged six-dBm minimum. A too-weak baseline has a separate
+error. Automated checks cover these messages and their UI presentation; all 104
+desktop tests and the syntax check passed, and the UI tests passed again after
+adding the final presentation assertion.
+No threshold or calibration guard was relaxed. The running instance retains its
+measurements in memory; it has not loaded these diagnostic changes. Paul was asked
+whether the phone stayed outside until collection actually completed. He clarified
+that he used a stopwatch, entered another room after 15 seconds (before the
+20-second collection countdown ended), and returned after approximately three
+minutes. This provides about 40 seconds beyond the nominal countdown plus trial
+duration, so premature return is not established as the cause. Exact comparison
+values remain unavailable from the running version's summary. Physical separation
+remains unverified.
+
+### Persistent measurements and multiple real-world profiles
+
+At Paul's request, named profiles now persist independent home SSIDs, measurements
+and thresholds in `presence-profiles.json` beside desktop configuration. Checkpoints
+run about once per second and save immediately at stop, reset, profile changes and
+normal shutdown. Atomic file replacement uses mode 0600. Loaded trials are validated
+and always stopped; no offline time, recent RSSI or running timer is restored.
+Corrupt/incompatible files are preserved with a visible storage error. Profiles
+are scoped to the installation's beacon without storing pairing or Firebase keys.
+
+Switching clears old phone/presence state, overrides and movement verification.
+Per-group reset preserves other groups and profiles. Updating an SSID keeps measured
+data but requires threshold recalculation. The companion now reports versioned
+SSID telemetry and shows the selected profile; unknown Wi-Fi and confirmed Wi-Fi
+disconnection remain distinct. Old companion telemetry does not silently use the
+wrong home's classification.
+
+All 111 desktop tests, syntax checks for 20 desktop modules and the mobile
+TypeScript check passed. The Android release build and six existing native unit
+tests passed; the APK was installed with pairing preserved. Tests cover file
+reload, selection and threshold retention, partial-trial recovery, invalid files,
+failed atomic replacement, reset isolation, UI selection and movement/freshness
+gating. Real restart recovery with Paul's newly recorded data and switching between
+his apartment and parents' Wi-Fi remain to be verified. A subsequent read-only
+check found the user-created active profile saved with mode 0600 and empty trial
+groups. The updated phone displayed that profile, Connected · working, active BLE
+and home Wi-Fi. This confirms initial live profile synchronization and metadata
+persistence, but not yet restart recovery of a recorded trial. Existing measurements in
+the pre-update running instance have not been recovered or written to disk. No
+profile-dependent calibration or movement was enabled in his running desktop.
+
 ## Still required
 
 - Complete and verify the Gather 2.0 profile. Media selectors, incoming waves and

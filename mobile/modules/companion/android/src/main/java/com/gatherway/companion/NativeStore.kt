@@ -41,7 +41,7 @@ object NativeStore {
     java.util.UUID.fromString(value.getString("beacon"))
     val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, masterKey())
     val wrapped = JSONObject().put("iv", Wire.encode(cipher.iv)).put("data", Wire.encode(cipher.doFinal(value.toString().toByteArray(Charsets.UTF_8))))
-    prefs(context).edit().putString("config", wrapped.toString()).putBoolean("enabled", false).remove("seen").remove("acks").apply()
+    prefs(context).edit().putString("config", wrapped.toString()).putBoolean("enabled", false).remove("seen").remove("acks").remove("profileName").remove("profileHomeWifi").apply()
   }
   @Synchronized fun initializeFirebase(context: Context) {
     val settings = config(context)?.optJSONObject("firebase") ?: return

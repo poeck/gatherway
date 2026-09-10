@@ -43,7 +43,7 @@ class CompanionModule : Module() {
         "advertising" to CompanionService.advertising, "working" to CompanionService.working,
         "connection" to CompanionService.connection, "lastExchange" to CompanionService.lastExchange,
         "wifi" to CompanionService.wifi(context).first, "currentSsid" to CompanionService.wifi(context).second,
-        "homeWifi" to config?.optString("homeWifi"), "notifications" to manager.areNotificationsEnabled(),
+        "homeWifi" to (NativeStore.prefs(context).getString("profileHomeWifi", null) ?: config?.optString("homeWifi")), "profileName" to NativeStore.prefs(context).getString("profileName", null), "notifications" to manager.areNotificationsEnabled(),
         "fullScreen" to (Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent()),
         "fcmReady" to !NativeStore.prefs(context).getString("fcmToken", null).isNullOrEmpty(),
       )

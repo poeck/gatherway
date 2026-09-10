@@ -241,11 +241,73 @@ while retaining destination confirmation and manual-interruption handling.
 
 ## Calibration and behavior
 
-Start collection in desktop settings to activate advertisements during setup.
-Collect at least 30 seconds with the phone at the desk in its usual pocket, then
-another 30 seconds in another room. Calibration needs at least 15 samples per
-location and a six-dBm separation between the distributions' inner quantiles.
-Overlapping signals keep movement disabled.
+Use **Presence profile** for different real-world places, such as Apartment and
+Parents. Enter a name and the exact home Wi-Fi SSID, then choose **Save profile
+details** to edit the selected profile or **Create new profile** for another place.
+Switch manually using the profile selector. Each profile has separate measurements
+and calculated thresholds. The Gather office and its destinations remain shared.
+Switching stops collection, clears previous presence evidence and overrides, and
+disables automatic movement until its checks are repeated. Changing a profile's
+SSID retains measurements but invalidates its calculated thresholds.
+
+The updated phone app reports its observed Wi-Fi name over the existing encrypted
+connection. The desktop compares it with the selected profile's home network;
+confirmed Wi-Fi disconnection remains distinct from unavailable Wi-Fi information.
+An older companion cannot provide this profile-aware evidence and yields Unknown
+until updated. The phone displays the selected profile after its next exchange.
+
+Start **Record your room** in desktop settings to activate advertisements during
+setup. Collection begins after a 20-second countdown. Carry the phone normally
+throughout the room that should count as Available, including its farthest usual
+positions. Spend time at each position rather than walking continuously. The
+collection stops automatically after two minutes of valid monitoring.
+
+Then choose **Record other rooms** and leave the Available room during the
+countdown. Include the nearest usual spots in adjacent rooms, not only places
+with the weakest reception. Wait for collection to finish before returning with
+the phone. Each group can be stopped and resumed without losing progress; explicit
+reset buttons clear one group in the selected profile. Progress is checkpointed
+locally about once per second, with immediate saves on stop, reset, profile changes
+and normal shutdown. Completed and partial trials survive restarts; restored
+collections are stopped until explicitly resumed, without counting offline time.
+The profile storage message reports success or errors. On a crash, the most recent
+interval since the last checkpoint may be lost. Older versions' unsaved in-memory
+trials cannot be recovered by installing this change.
+
+The private file `presence-profiles.json` is stored beside the desktop configuration
+in its Gatherway user-data directory (normally `~/.config/Gather/gatherway`). It
+contains profile names, SSIDs, signal/time measurements and thresholds, without
+Firebase credentials, pairing keys or conversation data. Writes use an atomic
+replacement with owner-only permissions. Invalid/incompatible files are preserved
+and shown as unavailable rather than silently replaced with empty measurements.
+Profiles are bound to this installation's beacon. Changes to the phone, laptop
+placement or radio settings require reviewing and usually repeating calibration.
+
+Only intervals with fresh phone telemetry, active advertising, a running companion,
+healthy scanning and confirmed home Wi-Fi count. Monitoring outages pause the
+measurement clock. Suspend, disconnect and pause stop collection while retaining
+completed intervals. A stalled desktop timer does not count as a reception gap.
+The UI reports valid time, received samples, signal coverage and time without
+recent reception. Coverage uses the same five-second reception window as presence.
+
+There is no minimum packet count. Healthy monitoring with weak or zero BLE
+reception outside the room is valid evidence. In the Available room, at least 90%
+of valid time must have recent reception, with no continuous uncovered period
+over five seconds. Time-weighted signal quantiles prevent packet bursts from
+dominating the thresholds. The weak in-room quantile must exceed the strong
+other-room quantile by six dBm when other-room signals exist. With no other-room
+signals, the exit threshold is inferred six dBm below the in-room threshold; no
+RSSI values are invented. These are calibration screening rules, not proof of
+physical room separation. Select **Calculate thresholds**, then verify real
+transitions before enabling movement. Thresholds are saved, but movement remains
+disabled until its existing acceptance checks pass.
+
+Completed groups show the weaker in-room signal, stronger other-room signal and
+their separation in dB. These are time-weighted comparison values, not the latest
+live RSSI. Good reception percentages alone do not imply that the rooms separate.
+An overlap error reports the measured margin against the required six dB; do not
+relax it merely to accept a trial. Keep the phone outside until collection actually
+finishes, including any extra time waiting for monitoring to recover.
 
 The classifier uses a five-second median window and a five-second dwell. This
 targets roughly 5–10-second transitions in clear conditions; it is not a guarantee
@@ -254,8 +316,11 @@ limit. Unknown Wi-Fi information, stopped advertising, unavailable scanning, or
 phone telemetry older than ten seconds yields unknown and holds position.
 
 The laptop remains the decision maker. Phone requests run about every two seconds
-while the companion service operates. BLE advertising requests a two-second
-controller interval using the Android advertising-set API. Requests and replies are authenticated and
+while the companion service operates. BLE advertising repeats every 250 ms, with
+a sequence updated about every two seconds in the primary service-data packet.
+Repeats improve the chance of intersecting the laptop's receive windows; actual
+sample cadence, screen-off reliability and battery cost still require measurement.
+Requests and replies are authenticated and
 encrypted, and requests include freshness and replay checks. Local phone receipt
 timestamps determine telemetry freshness.
 

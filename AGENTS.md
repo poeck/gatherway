@@ -113,6 +113,32 @@ live and is deferred until more colleagues are available. Paul confirmed that a
 fixed-desk visit during brief absence alerts without a self conversation and that
 departure cancels the alert. These alert trials used manual presence overrides;
 long idle behavior and BLE presence accuracy still require testing.
+Initial BLE calibration was blocked by missing samples and BlueZ 5.87 daemon
+crashes. The scanner now avoids BlueZ UUID filtering, filters for the paired phone
+locally, and recovers from discovery failures. Subsequent trials improved sampling
+but still contained a 17-second gap with the phone continuously in the same room.
+The scanner now explicitly requests LE discovery; its previous start command reset
+that choice. One standalone trial after this correction received 28 samples in
+45 seconds with a longest gap of 4.9 seconds. Fresh in-app calibration, sustained
+reception and room separation remain unverified. Do not treat a Scanning status
+alone as proof of proximity detection.
+Calibration now uses two minutes of healthy monitoring per group, including
+weak or missing BLE reception in other rooms, rather than a minimum packet count.
+It includes a countdown, automatic stop, resume and per-group reset. In-room
+reception quality and overlapping signal distributions still gate calibration.
+Paul completed the first timed groups (in-room 98% signal availability, other
+rooms 70%), but threshold calculation rejected their separation/weakness check.
+Room separation is not verified. Diagnostics now show the comparison quantiles
+and margin; do not infer successful separation from reception percentages alone.
+Old sample counts alone cannot establish a timed trial.
+Named presence profiles now keep independent home networks, timed measurements
+and thresholds in local persistent storage. Progress and the selected profile
+survive restarts; collection resumes only on explicit request. Switching places
+is manual and resets presence evidence and movement verification. The companion
+update for profile-aware Wi-Fi reporting has been installed. Persistence and
+switching have automated checks; Paul's real restart and multi-home trials remain
+pending. Do not claim that measurements from older in-memory-only versions were
+recovered.
 Incoming waves have been
 received through the real Gather 2.0 integration. Conversation-state probes have
 been checked in locked, unlocked and absent conversations; the integrated reader

@@ -14,6 +14,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelUuid
 import androidx.core.app.NotificationCompat
 import org.json.JSONArray
@@ -40,11 +42,14 @@ class CompanionService : Service() {
       @Suppress("DEPRECATION") val ssid = manager.connectionInfo?.ssid?.removeSurrounding("\"")
       if (ssid.isNullOrBlank() || ssid == "<unknown ssid>" || ssid == "0x") return "unknown" to null
       // Onboarding needs the current SSID before pairing has been saved.
-      val home = NativeStore.config(context)?.optString("homeWifi")
+      val home = NativeStore.prefs(context).getString("profileHomeWifi", null) ?: NativeStore.config(context)?.optString("homeWifi")
       return (if (home.isNullOrBlank()) "unknown" else if (ssid == home) "home" else "away") to ssid
     }
   }
   private val executor = Executors.newSingleThreadScheduledExecutor()
+  private val bluetoothHandler = Handler(Looper.getMainLooper())
+  private val advertisingTimeout = Runnable { advertisingFailed("BLE update timed out; retrying") }
+  private var beaconSequence = 0
   @Volatile private var callback: AdvertisingSetCallback? = null
   private var advertiser: android.bluetooth.le.BluetoothLeAdvertiser? = null
   override fun onBind(intent: Intent?): IBinder? = null
@@ -59,6 +64,8 @@ class CompanionService : Service() {
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
   private fun startAdvertising() {
+    if (Looper.myLooper() != Looper.getMainLooper()) { bluetoothHandler.post { startAdvertising() }; return }
+    if (!running || !working) return
     if (advertising) return
     if (checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
     val adapter = getSystemService(BluetoothManager::class.java).adapter ?: return
@@ -66,28 +73,60 @@ class CompanionService : Service() {
     val beacon = NativeStore.config(this)?.optString("beacon") ?: return
     advertiser = adapter.bluetoothLeAdvertiser ?: return
     if (callback != null) return
+    val uuid = ParcelUuid.fromString(beacon)
     callback = object : AdvertisingSetCallback() {
       override fun onAdvertisingSetStarted(set: AdvertisingSet?, txPower: Int, status: Int) {
         if (callback !== this) { runCatching { advertiser?.stopAdvertisingSet(this) }; return }
-        advertising = status == ADVERTISE_SUCCESS
-        if (!advertising) { callback = null; connection = "BLE advertising failed ($status)" }
+        bluetoothHandler.removeCallbacks(advertisingTimeout)
+        if (status != ADVERTISE_SUCCESS || set == null) { advertisingFailed("BLE advertising failed ($status)"); return }
+        advertising = true
+        scheduleHeartbeat(set, uuid, this)
       }
-      override fun onAdvertisingSetStopped(set: AdvertisingSet?) { if (callback === this) { advertising = false; callback = null } }
+      override fun onAdvertisingDataSet(set: AdvertisingSet?, status: Int) {
+        if (callback !== this) return
+        bluetoothHandler.removeCallbacks(advertisingTimeout)
+        if (status != ADVERTISE_SUCCESS || set == null) { advertisingFailed("BLE update failed ($status)"); return }
+        scheduleHeartbeat(set, uuid, this)
+      }
+      override fun onAdvertisingSetStopped(set: AdvertisingSet?) { if (callback === this) stopAdvertising() }
     }
-    // 3200 × 0.625 ms = 2 seconds, scheduled by the Bluetooth controller.
-    val settings = AdvertisingSetParameters.Builder().setLegacyMode(true).setScannable(true).setConnectable(false).setInterval(3200).setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MEDIUM).build()
-    val uuid = ParcelUuid.fromString(beacon)
-    val data = AdvertiseData.Builder().addServiceUuid(uuid).setIncludeDeviceName(false).build()
-    val scanResponse = AdvertiseData.Builder().addServiceData(uuid, byteArrayOf(1)).build()
-    advertiser?.startAdvertisingSet(settings, data, scanResponse, null, null, callback)
+    // Repeat every 250 ms to intersect the laptop's receive windows. The payload
+    // changes every two seconds; reception cadence still needs device validation.
+    val settings = AdvertisingSetParameters.Builder().setLegacyMode(true).setScannable(false).setConnectable(false).setInterval(400).setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MEDIUM).build()
+    bluetoothHandler.postDelayed(advertisingTimeout, 10000)
+    runCatching { advertiser?.startAdvertisingSet(settings, beaconData(uuid), null, null, null, callback) }
+      .onFailure { advertisingFailed("BLE advertising unavailable; check Bluetooth permissions") }
   }
-  private fun stopAdvertising() { runCatching { callback?.let { advertiser?.stopAdvertisingSet(it) } }; callback = null; advertising = false }
+  private fun beaconData(uuid: ParcelUuid): AdvertiseData {
+    beaconSequence = (beaconSequence + 1) and 0xffff
+    // Keep identity and a changing heartbeat in the primary packet (21 bytes).
+    // No scan response is needed, and unchanged packets cannot mask every update.
+    return AdvertiseData.Builder().addServiceData(uuid, byteArrayOf(1, beaconSequence.toByte(), (beaconSequence ushr 8).toByte())).build()
+  }
+  private fun scheduleHeartbeat(set: AdvertisingSet, uuid: ParcelUuid, owner: AdvertisingSetCallback) {
+    // Run independently of HTTP exchanges; allow only one outstanding data update.
+    bluetoothHandler.postDelayed({
+      if (callback === owner && running && working && advertising) {
+        bluetoothHandler.postDelayed(advertisingTimeout, 8000)
+        runCatching { set.setAdvertisingData(beaconData(uuid)) }
+          .onFailure { advertisingFailed("BLE update unavailable; check Bluetooth permissions") }
+      }
+    }, 2000)
+  }
+  private fun advertisingFailed(message: String) { stopAdvertising(); connection = message }
+  private fun stopAdvertising() {
+    if (Looper.myLooper() != Looper.getMainLooper()) { bluetoothHandler.post { stopAdvertising() }; return }
+    bluetoothHandler.removeCallbacksAndMessages(null)
+    val previous = callback; callback = null; advertising = false
+    runCatching { previous?.let { advertiser?.stopAdvertisingSet(it) } }
+  }
   private fun exchange() {
     val config = NativeStore.config(this) ?: return
     if (working) startAdvertising() else stopAdvertising()
     val prefs = NativeStore.prefs(this)
     val acks = synchronized(Alerts) { prefs.getStringSet("acks", emptySet())!!.toSet() }
-    val body = JSONObject().put("wifi", wifi(this).first).put("bluetooth", advertising).put("serviceRunning", running).put("acks", JSONArray(acks.toList())).put("fcmToken", prefs.getString("fcmToken", null))
+    val wifiState = wifi(this)
+    val body = JSONObject().put("wifi", wifiState.first).put("wifiTelemetryVersion", 1).put("wifiSsid", wifiState.second ?: JSONObject.NULL).put("bluetooth", advertising).put("serviceRunning", running).put("acks", JSONArray(acks.toList())).put("fcmToken", prefs.getString("fcmToken", null))
     val message = Wire.packet("exchange", body)
     val endpoint = config.getString("endpoint"); NativeStore.validateEndpoint(endpoint)
     val connection = URI(endpoint.trimEnd('/') + "/v1/exchange").toURL().openConnection() as HttpURLConnection
@@ -102,6 +141,12 @@ class CompanionService : Service() {
       val result = response.getJSONObject("body"); require(result.getString("requestId") == message.getString("id"))
       if (!running || !prefs.getBoolean("enabled", false)) return
       val state = result.getJSONObject("state")
+      val profile = state.optJSONObject("presenceProfile")
+      if (profile != null) {
+        val name = profile.getString("name"); val home = profile.getString("homeWifi")
+        require(name.length <= 80 && home.toByteArray(Charsets.UTF_8).size <= 32)
+        if (prefs.getString("profileName", null) != name || prefs.getString("profileHomeWifi", null) != home) prefs.edit().putString("profileName", name).putString("profileHomeWifi", home).apply()
+      } else if (prefs.contains("profileName")) prefs.edit().remove("profileName").remove("profileHomeWifi").apply()
       working = state.optBoolean("working")
       lastExchange = System.currentTimeMillis(); CompanionService.connection = if (working) "Connected · working" else "Connected · waiting for Gather"
       synchronized(Alerts) { val remaining = prefs.getStringSet("acks", emptySet())!!.toMutableSet(); remaining.removeAll(acks); prefs.edit().putStringSet("acks", remaining).apply() }
@@ -110,5 +155,5 @@ class CompanionService : Service() {
       if (!working) stopAdvertising()
     } finally { connection.disconnect() }
   }
-  override fun onDestroy() { executor.shutdownNow(); stopAdvertising(); running = false; working = false; connection = "Stopped — open the app to restart"; super.onDestroy() }
+  override fun onDestroy() { running = false; working = false; executor.shutdownNow(); stopAdvertising(); connection = "Stopped — open the app to restart"; super.onDestroy() }
 }

@@ -2,7 +2,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { BrowserWindow, ipcMain, Notification, dialog } = require('electron');
 const { Store } = require('./store');
-const { Presence, calibrate } = require('./presence');
+const { Presence } = require('./presence');
+const { calibrationIssue } = require('./calibration');
+const { PresenceProfiles, profileWifi } = require('./presence-profiles');
 const { Engine } = require('./engine');
 const { Transport, tailnetAddress } = require('./transport');
 const { Fcm } = require('./fcm');
@@ -13,13 +15,16 @@ class Controller {
   constructor(app, win) {
     this.win = win; this.store = new Store(path.join(app.getPath('userData'), 'gatherway'));
     this.config = this.store.config; this.phone = null; this.snapshot = null; this.suspended = false;
+    this.presenceProfiles = new PresenceProfiles(this.store.directory, this.config.beacon, this.config.presence);
+    this.config.presence = { ...this.presenceProfiles.active.presence };
+    this.config.movementVerified = false;
     this.presence = new Presence(this.config.presence); this.engine = new Engine(this.config);
     this.adapter = new GatherAdapter(win, this.config); this.fcm = new Fcm(this.config);
-    this.availability = 'unknown'; this.override = null; this.samples = { near: [], far: [] }; this.collecting = null; this.testAlerts = new Map();
+    this.availability = 'unknown'; this.override = null; this.calibration = this.presenceProfiles.active.calibration; this.testAlerts = new Map();
     this.ble = new BleScanner(this.config.beacon, (rssi, now) => {
-      this.presence.observe(rssi, now); this.lastRssi = rssi;
-      if (this.collecting) this.samples[this.collecting].push(rssi);
-    });
+      this.presence.observe(rssi, now); this.lastRssi = rssi; this.lastRssiAt = now;
+      this.calibration.observe(rssi, now, this.calibrationIssue(now));
+    }, healthy => { if (!healthy) this.calibration.invalidate('Bluetooth scanning unavailable'); });
     this.ble.start(); this.startTransport();
     ipcMain.on('gatherway:interaction', (event, input) => {
       if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || !this.adapter.validOrigin()) return;
@@ -31,18 +36,40 @@ class Controller {
       if (!this.settings || event.sender !== this.settings.webContents || event.senderFrame !== this.settings.webContents.mainFrame || !event.senderFrame.url.startsWith('file:')) throw new Error('Invalid sender');
       return this.command(command, payload);
     });
-    this.timer = setInterval(() => this.tick(), 1000);
+    this.timer = setInterval(() => {
+      this.calibration.tick(Date.now(), this.calibrationIssue(Date.now()));
+      this.presenceProfiles.checkpoint();
+      this.tick();
+    }, 1000);
     win.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) this.disconnect(); });
     win.webContents.on('render-process-gone', () => this.disconnect());
   }
+  get collecting() { return this.calibration.active; }
+  activatePresenceProfile() {
+    this.disconnect();
+    this.calibration = this.presenceProfiles.active.calibration;
+    this.config.presence = { ...this.presenceProfiles.active.presence };
+    this.presence = new Presence(this.config.presence); this.override = null;
+    this.config.movementVerified = false; this.testedDestinations = new Set();
+    this.lastRssi = null; this.lastRssiAt = null;
+    this.store.save();
+  }
+  calibrationIssue(now) {
+    if (this.suspended || this.config.paused) return 'Desktop monitoring is paused';
+    if (!this.presenceProfiles?.active.homeWifi) return 'Set the home Wi-Fi name for this profile';
+    if (this.phone && this.phone.wifiTelemetryVersion !== 1) return 'Update the phone companion for presence profiles';
+    return calibrationIssue(this.phone, this.ble.healthy, now);
+  }
   startTransport() {
     this.transport = new Transport(this.config, body => {
-      this.phone = { wifi: body.wifi, bluetooth: body.bluetooth, serviceRunning: body.serviceRunning, receivedAt: Date.now(), fcmToken: body.fcmToken || null };
+      this.phone = { wifi: profileWifi(body, this.presenceProfiles.active.homeWifi), wifiTelemetryVersion: body.wifiTelemetryVersion, bluetooth: body.bluetooth, serviceRunning: body.serviceRunning, receivedAt: Date.now(), fcmToken: body.fcmToken || null };
+      const issue = this.calibrationIssue(Date.now());
+      if (issue) this.calibration.invalidate(issue);
       for (const id of body.acks) {
         this.effects(this.engine.acknowledge(id));
         if (this.testAlerts.delete(id)) this.effects([{ type: 'cancel', id, reason: 'acknowledged' }]);
       }
-      return { working: !this.suspended && !this.config.paused && (!!this.collecting || (!!this.snapshot?.connected && this.config.adapterVerified)), paused: this.config.paused, availability: this.availability };
+      return { working: !this.suspended && !this.config.paused && (!!this.collecting || (!!this.snapshot?.connected && this.config.adapterVerified)), paused: this.config.paused, availability: this.availability, presenceProfile: { name: this.presenceProfiles.active.name, homeWifi: this.presenceProfiles.active.homeWifi } };
     }, () => this.store.log('transport-unavailable'));
     this.transport.start();
   }
@@ -86,7 +113,7 @@ class Controller {
     }
   }
   cancelTests() { for (const id of this.testAlerts.keys()) this.effects([{ type: 'cancel', id, reason: 'acknowledged' }]); this.testAlerts.clear(); }
-  disconnect() { this.adapter.disconnect(); this.effects(this.engine.cancelAll()); this.cancelTests(); this.presence.reset(); this.phone = null; this.snapshot = null; this.availability = 'unknown'; }
+  disconnect() { this.adapter.disconnect(); this.effects(this.engine.cancelAll()); this.cancelTests(); this.presence.reset(); this.calibration.stop('Connection changed; resume collection when ready'); this.presenceProfiles?.checkpoint(); this.phone = null; this.snapshot = null; this.availability = 'unknown'; }
   suspend() { this.suspended = true; this.disconnect(); }
   resume() { this.disconnect(); this.suspended = false; }
   showSettings() {
@@ -103,7 +130,9 @@ class Controller {
       phone: this.phone ? { ...this.phone, fcmToken: undefined } : null,
       snapshot: this.snapshot, availability: this.availability, automatic: this.engine.owner, override: this.override,
       transport: this.transport.status, bluetooth: this.ble.status, fcm: this.fcm.status,
-      lastRssi: this.lastRssi, collecting: this.collecting, samples: { near: this.samples.near.length, far: this.samples.far.length },
+      lastRssi: Date.now() - this.lastRssiAt < 5000 ? this.lastRssi : null,
+      collecting: this.collecting, calibration: this.calibration.state(Date.now()),
+      presenceProfiles: this.presenceProfiles.state(),
     };
   }
   async command(command, payload) {
@@ -156,9 +185,31 @@ class Controller {
         this.config.movementVerified = true; this.store.save(); break;
       case 'collect':
         if (!['near', 'far', null].includes(payload)) throw new Error('Invalid calibration step');
-        this.collecting = payload; if (payload) this.samples[payload] = []; break;
-      case 'calibrate':
-        this.collecting = null; this.config.presence = calibrate(this.samples.near, this.samples.far); this.presence = new Presence(this.config.presence); this.config.movementVerified = false; this.store.save(); break;
+        if (payload) {
+          if (this.suspended || this.config.paused) throw new Error('Resume desktop monitoring first');
+          this.calibration.start(payload, Date.now());
+          this.config.movementVerified = false; this.store.save();
+        } else this.calibration.stop();
+        this.presenceProfiles?.save();
+        break;
+      case 'reset-calibration': this.calibration.resetGroup(payload); this.presenceProfiles?.save(); break;
+      case 'create-presence-profile':
+      case 'select-presence-profile':
+      case 'edit-presence-profile': {
+        // Stop old automation before changing the environment, including on a save failure.
+        this.disconnect(); this.config.movementVerified = false;
+        try {
+          if (command === 'create-presence-profile') this.presenceProfiles.create(payload?.name, payload?.homeWifi);
+          else if (command === 'select-presence-profile') this.presenceProfiles.select(payload);
+          else this.presenceProfiles.edit(payload?.name, payload?.homeWifi);
+        } finally { this.activatePresenceProfile(); }
+        break;
+      }
+      case 'calibrate': {
+        const result = this.calibration.calculate();
+        if (this.presenceProfiles) { this.presenceProfiles.active.presence = result; this.presenceProfiles.save(); }
+        this.config.presence = result; this.presence = new Presence(result); this.config.movementVerified = false; this.store.save(); break;
+      }
       case 'test-alert': {
         const now = Date.now(), id = crypto.randomUUID(); this.testAlerts.set(id, now + 45000); this.effects([{ type: 'alert', id, kind: 'test', mode: 'ring', createdAt: now, expiresAt: now + 45000 }]); break;
       }
