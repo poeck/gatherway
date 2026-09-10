@@ -1,0 +1,23 @@
+{
+  "name": "gatherway-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild --platform android --template expo-template-bare-minimum@sdk-56",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "~56.0.21",
+    "expo-dev-client": "~56.0.26",
+    "expo-modules-core": "~56.0.25",
+    "react": "19.2.3",
+    "react-native": "^0.85.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "~5.9.2"
+  }
+}

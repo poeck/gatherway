@@ -1,5 +1,14 @@
 # Gather Linux
 
+## Gatherway companion
+
+This fork adds an Android companion, encrypted Tailscale/FCM communication,
+presence state machines, and guarded Gather automation. **Real Gather 2.0 adapter
+verification and Pixel calibration are still required before enabling automation.**
+
+Read [Gatherway setup and verification](docs/SETUP.md). Open companion settings with
+`Ctrl+Shift+G` or start with `--settings`. Desktop and Android application text is English.
+
 An unofficial, optimized **Gather Town** client for Linux.
 
 This project wraps the Gather web client in Electron with specific tweaks to fix common Linux issues like **screen sharing on Wayland**, global hotkeys, and auto-away functionality.
@@ -10,8 +19,8 @@ This project wraps the Gather web client in Electron with specific tweaks to fix
 
 - **Gather 2.0 & Classic:** Support for both the new Beta (default) and Classic versions.
 - **Wayland Screen Sharing:** Native support for PipeWire to fix the infamous "black screen" issue on modern Linux (GNOME/KDE/Hyprland).
-- **Smart Auto-Away:**
-  - Detects system sleep/suspend and sets "Away" immediately.
+- **Suspend handling:** Stops companion automation on suspend and waits for fresh
+  Gather and phone state after reconnecting.
 - **Hotkeys Fixed:** Prevents Electron from swallowing critical game keys like `WASD` or `Ctrl+Shift+A`.
 
 ## 📥 Installation

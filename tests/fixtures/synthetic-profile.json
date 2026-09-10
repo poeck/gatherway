@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "connected": "main[data-connected=true]",
+  "space": { "selector": "main", "attribute": "data-office" },
+  "self": { "selector": "main", "attribute": "data-self" },
+  "location": { "selector": "main", "attribute": "data-location" },
+  "participants": { "container": "[aria-label='Conversation participants']", "selector": "[aria-label='Conversation participants'] [data-participant]", "idAttribute": "data-participant" },
+  "deskVisitors": { "container": "[aria-label='Desk visitors']", "selector": "[aria-label='Desk visitors'] [data-visitor]", "idAttribute": "data-visitor" },
+  "waves": { "container": "[aria-label='Directed waves']", "selector": "[data-wave]", "idAttribute": "data-wave", "senderAttribute": "data-from", "recipientAttribute": "data-to" },
+  "mic": { "selector": "button[aria-label='Microphone']", "attribute": "aria-pressed", "on": "true", "off": "false" },
+  "camera": { "selector": "button[aria-label='Camera']", "attribute": "aria-pressed", "on": "true", "off": "false" },
+  "destinations": { "desk": "[data-destination='desk']", "near-desk": "[data-destination='near-desk']", "break": "[data-destination='break']" }
+}

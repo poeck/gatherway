@@ -1,0 +1,16 @@
+{
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "message": {
+    "kind": "event",
+    "body": {
+      "text": "Hello 👋"
+    },
+    "sentAt": 1000,
+    "id": "fixture"
+  },
+  "envelope": {
+    "v": 1,
+    "iv": "iw1Xo0K4W2xigETc",
+    "data": "ZmE4JKCG/lvB9+Fw2MXiGziym/sAwajuk54bQ1FKepvqXYVeKykV3fVfGIDs1OSXK+ge/wwsub3FxOG9thmtN4daGe9hJK+QHk76Mq1Biw1zrWwSuMSStZyC"
+  }
+}

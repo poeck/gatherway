@@ -17,7 +17,14 @@
           version = "1.0.6";
 
           # Use the current directory as the source
-          src = ./.;
+          src = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter = path: type:
+              let relative = pkgs.lib.removePrefix (toString ./. + "/") (toString path);
+              in builtins.elem relative [ "main.js" "package.json" "gather.desktop" "desktop" "assets" ]
+                || pkgs.lib.hasPrefix "desktop/" relative
+                || pkgs.lib.hasPrefix "assets/" relative;
+          };
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
@@ -31,6 +38,7 @@
             
             # 2. Copy the main files
             cp main.js package.json $out/libexec/gather-linux/
+            cp -r desktop $out/libexec/gather-linux/
             # Copy the assets
             cp assets/icon.png $out/share/icons/hicolor/512x512/apps/gather-linux.png
 
@@ -38,6 +46,7 @@
             # This creates a 'gather-electron' command that runs: 
             # electron /path/to/app --enable-features=WebRTCPipeWireCapturer
             makeWrapper ${pkgs.electron}/bin/electron $out/bin/gather-linux \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.bluez ]} \
               --add-flags "$out/libexec/gather-linux" \
               --add-flags "--enable-features=WebRTCPipeWireCapturer"
 
@@ -49,6 +58,10 @@
         # This allows you to run `nix run` immediately
         apps.default = flake-utils.lib.mkApp {
           drv = self.packages.${system}.default;
+        };
+
+        devShells.default = pkgs.mkShell {
+          packages = [ pkgs.nodejs_24 pkgs.electron pkgs.bluez ];
         };
       }
     );

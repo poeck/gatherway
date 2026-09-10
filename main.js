@@ -7,6 +7,9 @@ const {
   Menu,
   powerMonitor,
 } = require("electron");
+const path = require("node:path");
+const { Controller } = require("./desktop/controller");
+let controller;
 
 const URL_V2 = "https://app.v2.gather.town/";
 const URL_CLASSIC = "https://app.gather.town/";
@@ -27,6 +30,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, "desktop/gather-preload.js"),
     },
   });
 
@@ -35,34 +39,27 @@ function createWindow() {
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   });
 
-  // --- AUTO AWAY ON SUSPEND ---
-  powerMonitor.on("suspend", () => {
-    console.log("System suspending...");
-    win.webContents
-      .executeJavaScript(
-        `
-      (function() {
-        const container = document.getElementById('av-toolbar-pip-container');
-        if (container) {
-          const avatarBtn = container.querySelector('button');
-          if (avatarBtn) {
-            avatarBtn.click(); // 1. Open Menu
-            setTimeout(() => {
-              const allButtons = Array.from(document.querySelectorAll('button'));
-              const awayBtn = allButtons.find(b => b.textContent && b.textContent.trim() === 'Away');
-              if (awayBtn) {
-                awayBtn.click(); // 2. Click Away
-                console.log("Set status to Away");
-              }
-            }, 100);
-          }
-        }
-      })();
-    `,
-      )
-      .catch((err) => console.log("Auto-Away Error:", err));
+  try {
+    controller = new Controller(app, win);
+  } catch {
+    console.error("Gatherway could not start. Check the companion configuration; Gather remains available.");
+  }
+  const suspend = () => controller?.suspend();
+  const resume = () => controller?.resume();
+  powerMonitor.on("suspend", suspend);
+  powerMonitor.on("resume", resume);
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.control && input.shift && input.key.toLowerCase() === "g") {
+      event.preventDefault();
+      controller?.showSettings();
+    }
   });
-  // ----------------------------
+  win.on("closed", () => {
+    powerMonitor.removeListener("suspend", suspend);
+    powerMonitor.removeListener("resume", resume);
+    controller?.close(); controller = null;
+  });
+  if (controller && (process.argv.includes("--settings") || !controller.config.host)) controller.showSettings();
 
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback) => {
@@ -109,10 +106,9 @@ function createWindow() {
   );
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (
-      url.startsWith("https://gather.town") ||
-      url.includes("accounts.google.com")
-    ) {
+    let target;
+    try { target = new URL(url); } catch { return { action: "deny" }; }
+    if (target.protocol === "https:" && (target.hostname === "gather.town" || target.hostname.endsWith(".gather.town") || target.hostname === "accounts.google.com")) {
       return { action: "allow" };
     }
     if (url.startsWith("https://") || url.startsWith("http://")) {

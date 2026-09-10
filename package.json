@@ -6,17 +6,26 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.js"
   },
   "author": "Simon Koeck <simon@koeck.dev>",
   "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "electron": "^39.2.7",
-    "electron-builder": "^26.4.0"
+    "electron-builder": "^26.4.0",
+    "linkedom": "^0.18.13"
   },
   "executableName": "gather-linux",
   "build": {
+    "files": [
+      "main.js",
+      "desktop/**",
+      "assets/**",
+      "package.json"
+    ],
     "appId": "com.simonkoeck.gather-linux",
     "productName": "Gather",
     "directories": {
