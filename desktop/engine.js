@@ -15,6 +15,7 @@ class Engine {
     this.remindSince = null;
     this.reminded = false;
     this.seenWaves = new Set();
+    this.lastInteractionAt = 0;
     this.suspended = false;
   }
   cancelAll(reason = 'disconnected') {
@@ -24,6 +25,7 @@ class Engine {
     return effects;
   }
   interact(now) {
+    this.lastInteractionAt = Math.max(this.lastInteractionAt, now);
     const out = [];
     for (const [id, alert] of this.alerts) if (now >= alert.createdAt) { out.push({ type: 'cancel', id, reason: 'acknowledged' }); this.alerts.delete(id); }
     // Any physical movement interaction must not be mistaken for automatic navigation.
@@ -43,39 +45,49 @@ class Engine {
     if (!enabled || !s?.connected || s.spaceId !== this.config.spaceId || s.selfId !== this.config.selfId) return this.cancelAll();
     const effects = [];
     const locations = this.config.locations || {};
-    const atBreak = !!locations.away && s.location === locations.away;
-    const atDesk = !!locations.available && s.location === locations.available;
+    // Alarm policy can use verified profile positions before movement targets are captured.
+    // Explicitly captured locations take precedence over older profile targets.
+    const atLocation = (snapshot, key) => !!snapshot?.location && (locations[key]
+      ? snapshot.location === locations[key] : snapshot.matchedDestination === key);
+    const atBreak = atLocation(s, 'away');
+    const atDesk = atLocation(s, 'available');
     const participantsKnown = Array.isArray(s.participants);
     const participants = s.participants || [];
     const prev = this.previous;
-    const existingConversation = !!prev && Array.isArray(prev.participants) && prev.participants.length > 0 && prev.location !== locations.away;
+    const existingConversation = !!prev && Array.isArray(prev.participants) && prev.participants.length > 0 && !atLocation(prev, 'away');
     const visitors = new Set([...(s.deskVisitors || []).map(id => `desk:${id}`), ...participants.map(id => `avatar:${id}`)]);
 
     for (const [id, alert] of this.alerts) {
-      if (now >= alert.expiresAt || (alert.visit && !visitors.has(alert.visit))) {
+      const visitEnded = alert.visit && participantsKnown && Array.isArray(s.deskVisitors)
+        && !participants.includes(alert.sourceId) && !s.deskVisitors.includes(alert.sourceId);
+      if (now >= alert.expiresAt || visitEnded) {
         effects.push({ type: 'cancel', id, reason: now >= alert.expiresAt ? 'expired' : 'visitor-left' }); this.alerts.delete(id);
       }
     }
-    const alert = (kind, sourceId, visit = null) => {
+    const alert = (kind, sourceId, visit = null, createdAt = now) => {
+      if (!Number.isSafeInteger(createdAt) || createdAt > now || now >= createdAt + 45000 || createdAt <= this.lastInteractionAt) return;
       if (existingConversation || !participantsKnown || !Array.isArray(prev?.participants)) return;
       const longAway = atBreak || presence === 'away';
       if (longAway && kind === 'visit') return;
       // Unknown presence is visible, but never represented as a reliable ringing decision.
       const mode = longAway || presence === 'unknown' ? 'notification' : 'ring';
-      const event = { id: randomUUID(), kind, mode, sourceId, visit, createdAt: now, expiresAt: now + 45000 };
+      const event = { id: randomUUID(), kind, mode, sourceId, visit, createdAt, expiresAt: createdAt + 45000 };
       this.alerts.set(event.id, event); effects.push({ type: 'alert', ...event });
     };
     if (prev) {
       const oldVisitors = new Set([...(prev.deskVisitors || []).map(id => `desk:${id}`), ...(prev.participants || []).map(id => `avatar:${id}`)]);
+      const previousVisitorIds = new Set([...(prev.deskVisitors || []), ...(prev.participants || [])]);
       const alerted = new Set();
       if (participantsKnown && Array.isArray(prev.participants)) {
         for (const visit of visitors) if (!oldVisitors.has(visit) && (visit.startsWith('avatar:') || (Array.isArray(s.deskVisitors) && Array.isArray(prev.deskVisitors)))) {
           const id = visit.slice(visit.indexOf(':') + 1);
+          // A desk occupant becoming an avatar participant is the same ongoing visit.
+          if (previousVisitorIds.has(id)) continue;
           const avatarVisit = visit.startsWith('avatar:');
           if ((atDesk || this.owner || presence === 'brief') && !alerted.has(id)) { alert('visit', id, avatarVisit ? visit : participants.includes(id) ? `avatar:${id}` : visit); alerted.add(id); }
         }
       }
-      for (const wave of s.waves || []) if (Array.isArray(prev.waves) && !this.seenWaves.has(wave.id)) alert('wave', wave.fromId);
+      for (const wave of s.waves || []) if (Array.isArray(prev.waves) && !this.seenWaves.has(wave.id)) alert('wave', wave.fromId, null, wave.createdAt);
     }
     for (const wave of s.waves || []) this.seenWaves.add(wave.id);
     if (this.seenWaves.size > 2000) this.seenWaves = new Set([...this.seenWaves].slice(-1000));

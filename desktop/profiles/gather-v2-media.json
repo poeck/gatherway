@@ -1,0 +1,14 @@
+{
+  "mic": {
+    "selector": "button[data-testid='toggle-microphone-on-button'], button[data-testid='toggle-microphone-off-button']",
+    "attribute": "data-testid",
+    "on": "toggle-microphone-off-button",
+    "off": "toggle-microphone-on-button"
+  },
+  "camera": {
+    "selector": "button[data-testid='toggle-camera-on-button'], button[data-testid='toggle-camera-off-button']",
+    "attribute": "data-testid",
+    "on": "toggle-camera-off-button",
+    "off": "toggle-camera-on-button"
+  }
+}

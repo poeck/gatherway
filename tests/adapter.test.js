@@ -33,13 +33,13 @@ test('adapter without a profile is explicitly unavailable', () => {
 });
 test('media action rechecks current state before clicking and confirms result', async () => {
   const document = fixture(); const button = document.querySelector('[aria-label="Microphone"]'); let clicks = 0;
-  button.setAttribute('aria-pressed', 'true'); button.click = () => { clicks++; button.setAttribute('aria-pressed', 'false'); };
+  button.getClientRects = () => [{}]; button.setAttribute('aria-pressed', 'true'); button.click = () => { clicks++; button.setAttribute('aria-pressed', 'false'); };
   const adapter = new GatherAdapter(null, { profile, selfId: 'me' }); adapter.evaluate = async (fn, ...args) => fn(document, ...args); adapter.snapshot = async () => inspectGather(document, profile, expected);
   await adapter.disableMedia({ mic: true, camera: true }); assert.equal(clicks, 1);
   await adapter.disableMedia({ mic: true }); assert.equal(clicks, 1);
 });
 test('media action reports a control that failed to disable', async () => {
-  const document = fixture(); const button = document.querySelector('[aria-label="Microphone"]'); button.setAttribute('aria-pressed', 'true'); button.click = () => {};
+  const document = fixture(); const button = document.querySelector('[aria-label="Microphone"]'); button.getClientRects = () => [{}]; button.setAttribute('aria-pressed', 'true'); button.click = () => {};
   const adapter = new GatherAdapter(null, { profile, selfId: 'me' }); adapter.evaluate = async (fn, ...args) => fn(document, ...args); adapter.snapshot = async () => inspectGather(document, profile, expected);
   await assert.rejects(adapter.disableMedia({ mic: true }), /not confirmed/);
 });
@@ -48,3 +48,74 @@ test('movement confirms the actual destination and handles missing controls', as
   const adapter = new GatherAdapter(null, { profile }); adapter.evaluate = async (fn, ...args) => fn(document, ...args); adapter.snapshot = async () => inspectGather(document, profile, expected);
   assert.equal(await adapter.move('break'), true); button.remove(); assert.equal(await adapter.move('break'), false); assert.equal(await adapter.move('missing'), false);
 });
+
+// Only media identifiers come from the real client; surrounding office state is synthetic.
+const mediaProfile = { ...profile, ...require('../desktop/profiles/gather-v2-media.json') };
+test('structured waves remain diagnostic without an explicit profile source', async () => {
+  const adapter = new GatherAdapter(null, { profile, ...expected });
+  adapter.evaluate = async () => inspectGather(fixture(), profile, expected);
+  adapter.readWaves = async () => ({ status: 'Listening', ...expected, waves: [{ id: 'one', fromId: 'alice', createdAt: 1000 }] });
+  const result = await adapter.snapshot();
+  assert.equal(result.waveIntegration.waves.length, 1); assert.deepEqual(result.waves, []);
+});
+test('structured wave source requires matching identity and a fresh baseline', async () => {
+  const structuredProfile = { ...profile, waves: { source: 'gather-events' } };
+  const adapter = new GatherAdapter(null, { profile: structuredProfile, ...expected });
+  adapter.evaluate = async () => inspectGather(fixture(), structuredProfile, expected);
+  let source = { status: 'Listening', ...expected, baseline: true, waves: [] };
+  adapter.readWaves = async () => source;
+  assert.equal((await adapter.snapshot()).waves, null);
+  source = { ...source, baseline: false, waves: [{ id: 'one', fromId: 'alice', createdAt: 1000 }] };
+  assert.deepEqual((await adapter.snapshot()).waves, source.waves);
+  source.selfId = 'other';
+  assert.equal((await adapter.snapshot()).waves, null);
+});
+test('disconnect invalidates in-flight snapshots and scopes observer cleanup', async () => {
+  const adapter = new GatherAdapter(null, { profile, ...expected });
+  adapter.evaluate = async () => inspectGather(fixture(), profile, expected);
+  let resolve, stoppedToken;
+  const token = adapter.waveToken;
+  adapter.readWaves = (currentToken, command) => command === 'stop'
+    ? (stoppedToken = currentToken, Promise.resolve())
+    : new Promise(done => { resolve = done; });
+  const pending = adapter.snapshot(); await Promise.resolve();
+  adapter.disconnect(); resolve({ status: 'Listening', ...expected, waves: [] });
+  await assert.rejects(pending, /session changed/);
+  assert.equal(stoppedToken, token); assert.notEqual(adapter.waveToken, token);
+});
+for (const [kind, label] of [['mic', 'Microphone'], ['camera', 'Camera']]) {
+  test(`${kind}: observed action identifiers map to media state and never enable media`, async () => {
+    const document = fixture(); const button = document.querySelector(`[aria-label="${label}"]`);
+    const spec = mediaProfile[kind]; let clicks = 0;
+    button.setAttribute('data-testid', spec.off); button.getClientRects = () => [{}];
+    button.click = () => { clicks++; button.setAttribute('data-testid', spec.off); };
+    const adapter = new GatherAdapter(null, { profile: mediaProfile, selfId: 'me' });
+    adapter.evaluate = async (fn, ...args) => fn(document, ...args);
+    adapter.snapshot = async () => inspectGather(document, mediaProfile, expected);
+    assert.equal((await adapter.snapshot())[kind], false);
+    await adapter.disableMedia({ [kind]: true }); assert.equal(clicks, 0);
+    button.setAttribute('data-testid', spec.on);
+    assert.equal((await adapter.snapshot())[kind], true);
+    await adapter.disableMedia({ [kind]: true }); assert.equal(clicks, 1);
+    assert.equal((await adapter.snapshot())[kind], false);
+  });
+  test(`${kind}: missing, ambiguous, hidden and disabled controls cannot trigger clicks`, async () => {
+    const document = fixture(); const button = document.querySelector(`[aria-label="${label}"]`);
+    const spec = mediaProfile[kind]; let clicks = 0;
+    const adapter = new GatherAdapter(null, { profile: mediaProfile, selfId: 'me' });
+    adapter.evaluate = async (fn, ...args) => fn(document, ...args);
+    adapter.snapshot = async () => inspectGather(document, mediaProfile, expected);
+    button.click = () => { clicks++; };
+    assert.equal((await adapter.snapshot())[kind], null);
+    await assert.rejects(adapter.disableMedia({ [kind]: true }), /unavailable/);
+    button.setAttribute('data-testid', spec.on); button.getClientRects = () => [];
+    await assert.rejects(adapter.disableMedia({ [kind]: true }), /unavailable/);
+    button.getClientRects = () => [{}]; button.setAttribute('aria-disabled', 'true');
+    await assert.rejects(adapter.disableMedia({ [kind]: true }), /unavailable/);
+    button.removeAttribute('aria-disabled');
+    const duplicate = button.cloneNode(true); duplicate.setAttribute('data-testid', spec.off); document.body.append(duplicate);
+    assert.equal((await adapter.snapshot())[kind], null);
+    await assert.rejects(adapter.disableMedia({ [kind]: true }), /unavailable/);
+    assert.equal(clicks, 0);
+  });
+}

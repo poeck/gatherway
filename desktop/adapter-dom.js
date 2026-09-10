@@ -17,13 +17,15 @@ function inspectGather(document, profile, expected) {
     return values.filter(id => id !== expected.selfId);
   };
   const attempt = (name, action) => { try { result[name] = action(); } catch { result.errors.push(`${name} unavailable`); } };
-  attempt('spaceId', () => read(profile.space));
-  attempt('selfId', () => read(profile.self));
-  attempt('connected', () => !!one(profile.connected) && result.spaceId === expected.spaceId && result.selfId === expected.selfId);
-  attempt('location', () => read(profile.location));
-  attempt('participants', () => list(profile.participants));
-  attempt('deskVisitors', () => list(profile.deskVisitors));
-  attempt('waves', () => {
+  if (profile.session?.source !== 'gather-repos') {
+    attempt('spaceId', () => read(profile.space));
+    attempt('selfId', () => read(profile.self));
+    attempt('connected', () => !!one(profile.connected) && result.spaceId === expected.spaceId && result.selfId === expected.selfId);
+    attempt('participants', () => list(profile.participants));
+  }
+  if (profile.location?.source !== 'gather-repos') attempt('location', () => read(profile.location));
+  if (profile.deskVisitors?.source !== 'gather-desk') attempt('deskVisitors', () => list(profile.deskVisitors));
+  if (profile.waves?.source !== 'gather-events') attempt('waves', () => {
     one(profile.waves.container);
     return nodes(profile.waves.selector).filter(node => node.getAttribute(profile.waves.recipientAttribute) === expected.selfId).map(node => {
       const id = node.getAttribute(profile.waves.idAttribute), fromId = node.getAttribute(profile.waves.senderAttribute);

@@ -31,7 +31,6 @@ class CompanionService : Service() {
     @Volatile var working = false
     @Volatile var lastExchange = 0L
     fun wifi(context: Context): Pair<String, String?> {
-      val settings = NativeStore.config(context) ?: return "unknown" to null
       if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return "unknown" to null
       val manager = context.applicationContext.getSystemService(WifiManager::class.java)
       if (!manager.isWifiEnabled) return "unknown" to null
@@ -40,8 +39,9 @@ class CompanionService : Service() {
       if (!connected) return "away" to null
       @Suppress("DEPRECATION") val ssid = manager.connectionInfo?.ssid?.removeSurrounding("\"")
       if (ssid.isNullOrBlank() || ssid == "<unknown ssid>" || ssid == "0x") return "unknown" to null
-      val home = settings.optString("homeWifi")
-      return (if (home.isBlank()) "unknown" else if (ssid == home) "home" else "away") to ssid
+      // Onboarding needs the current SSID before pairing has been saved.
+      val home = NativeStore.config(context)?.optString("homeWifi")
+      return (if (home.isNullOrBlank()) "unknown" else if (ssid == home) "home" else "away") to ssid
     }
   }
   private val executor = Executors.newSingleThreadScheduledExecutor()

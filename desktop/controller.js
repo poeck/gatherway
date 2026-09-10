@@ -86,7 +86,7 @@ class Controller {
     }
   }
   cancelTests() { for (const id of this.testAlerts.keys()) this.effects([{ type: 'cancel', id, reason: 'acknowledged' }]); this.testAlerts.clear(); }
-  disconnect() { this.adapter.invalidate(); this.effects(this.engine.cancelAll()); this.cancelTests(); this.presence.reset(); this.phone = null; this.snapshot = null; this.availability = 'unknown'; }
+  disconnect() { this.adapter.disconnect(); this.effects(this.engine.cancelAll()); this.cancelTests(); this.presence.reset(); this.phone = null; this.snapshot = null; this.availability = 'unknown'; }
   suspend() { this.suspended = true; this.disconnect(); }
   resume() { this.disconnect(); this.suspended = false; }
   showSettings() {

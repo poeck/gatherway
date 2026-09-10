@@ -31,6 +31,8 @@ class CompanionModule : Module() {
       NativeStore.initializeFirebase(context)
       NativeStore.prefs(context).edit().putBoolean("enabled", true).apply()
       context.startForegroundService(Intent(context, CompanionService::class.java))
+      // The JS API returns void; ComponentName is not an Expo bridge return type.
+      Unit
     }
     AsyncFunction("stop") { NativeStore.prefs(context).edit().putBoolean("enabled", false).apply(); context.stopService(Intent(context, CompanionService::class.java)); Alerts.cancelAll(context) }
     AsyncFunction("status") {

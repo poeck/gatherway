@@ -46,6 +46,7 @@
             # This creates a 'gather-electron' command that runs: 
             # electron /path/to/app --enable-features=WebRTCPipeWireCapturer
             makeWrapper ${pkgs.electron}/bin/electron $out/bin/gather-linux \
+              --unset LD_LIBRARY_PATH \
               --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.bluez ]} \
               --add-flags "$out/libexec/gather-linux" \
               --add-flags "--enable-features=WebRTCPipeWireCapturer"
@@ -62,6 +63,10 @@
 
         devShells.default = pkgs.mkShell {
           packages = [ pkgs.nodejs_24 pkgs.electron pkgs.bluez ];
+          # Inherited host libraries can conflict with Electron's pinned glibc.
+          shellHook = ''
+            unset LD_LIBRARY_PATH
+          '';
         };
       }
     );

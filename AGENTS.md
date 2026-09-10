@@ -95,10 +95,39 @@ Gather experience and the reliability of everyday office use.
 
 ## Current readiness and reference documents
 
-At the time this file was created, the application foundation and a phone test
-build existed, but the real Gather 2.0 connection and physical-device behavior
-still required verification. Automatic actions intentionally remained disabled.
-Update this description as those milestones are completed.
+The application foundation and a phone test build exist. The test APK has been
+installed and launched on Paul's Pixel 10 running Android 17. Phone permissions
+have been granted; Paul confirmed pairing and FCM token readiness, home-network
+recognition, and an initial "Connected - working" status. The start error has been
+fixed and verified on the phone. Sender credentials were prepared, and Paul reported
+successful initial call-alert/acknowledgement and short locked-screen expiry trials.
+Paul also reported successful locked-screen FCM delivery with the phone's
+Tailscale connection disabled. Silent, vibration and Do Not Disturb modes passed
+the user trials. Paul confirmed that focus alone does not acknowledge an alert,
+while genuine Gather interaction does. A real directed wave triggered the phone
+alert with availability manually set to Available. After a position-policy fix,
+Paul confirmed a real desk visitor triggers the phone alert and departure cancels
+it. Paul confirmed that further waves during an established conversation produce
+no additional alert. Suppression when another participant joins remains untested
+live and is deferred until more colleagues are available. Paul confirmed that a
+fixed-desk visit during brief absence alerts without a self conversation and that
+departure cancels the alert. These alert trials used manual presence overrides;
+long idle behavior and BLE presence accuracy still require testing.
+Incoming waves have been
+received through the real Gather 2.0 integration. Conversation-state probes have
+been checked in locked, unlocked and absent conversations; the integrated reader
+has also been checked without a conversation. Position recognition has been checked
+at the desk, brief-away point, break room and on return to the desk. Assigned-desk
+occupancy has been checked for visitor arrival and departure while Paul stays
+briefly away, without a self conversation. Automatic microphone/camera shutdown
+after approximately ten seconds alone has been reported in live use. Conversation
+protection has also been confirmed. Paul separately observed immediate microphone
+and camera shutdown on conversation exit, which he reports predates Gatherway.
+Manual reactivation remains intentional. This host behavior masks the live
+leave/rejoin timer-reset test; do not mark that test passed or repeatedly request
+the same scenario. Movement and physical-device
+behavior remain unverified. Media safety was activated for testing; movement stays
+disabled. Update this description as milestones progress.
 
 - [Setup and acceptance checklist](docs/SETUP.md): setup guidance and the scenarios
   to verify with the actual office and phone.
