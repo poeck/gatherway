@@ -11,6 +11,7 @@ function render(state) {
   $('pause').textContent = state.config.paused ? 'Resume' : 'Pause';
   $('status').textContent = `Availability: ${state.availability}\nPosition control: ${state.automatic ? 'Automatic' : 'Manual'}\n${state.transport}\nBluetooth: ${state.bluetooth}\nFCM: ${state.fcm}\nPhone: ${state.phone ? `${Math.floor((Date.now() - state.phone.receivedAt) / 1000)}s ago · Wi-Fi ${state.phone.wifi}` : 'Not connected'}\nAdapter: ${state.config.adapterVerified ? 'Verification recorded' : 'Not verified'}\nMovement: ${state.config.movementVerified ? 'Enabled' : 'Disabled'}`;
   $('capabilities').textContent = JSON.stringify(state.snapshot, null, 2);
+  $('navigationStatus').textContent = state.navigation ? JSON.stringify(state.navigation, null, 2) : 'No movement attempted in this session.';
   const calibration = state.calibration;
   if (state.presenceProfiles) {
     const profiles = state.presenceProfiles;
@@ -52,6 +53,8 @@ $('rotate').onclick = async () => { await command('rotate-pairing'); $('pairingC
 $('firebase').onclick = () => command('firebase');
 $('testAlert').onclick = () => command('test-alert');
 $('saveProfile').onclick = () => command('profile', $('profile').value);
+$('setupDeskAction').onclick = () => command('setup-desk-action');
+$('setupCoordinateActions').onclick = () => command('setup-coordinate-actions');
 $('devtools').onclick = () => command('devtools');
 $('verifyAdapter').onclick = () => $('observed').checked ? command('verify-adapter') : $('error').textContent = 'Complete the real-client checks first.';
 for (const [key, label] of [['available', 'Own desk'], ['brief', 'Brief absence'], ['away', 'Break room']]) {

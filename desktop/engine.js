@@ -41,7 +41,7 @@ class Engine {
     this.pendingMove = null;
   }
   manualMovement() { this.owner = false; this.pendingMove = null; this.suspended = true; }
-  update(s, presence, now, enabled = true) {
+  update(s, presence, now, enabled = true, allowMovement = true) {
     if (!enabled || !s?.connected || s.spaceId !== this.config.spaceId || s.selfId !== this.config.selfId) return this.cancelAll();
     const effects = [];
     const locations = this.config.locations || {};
@@ -111,7 +111,7 @@ class Engine {
 
     const destination = locations[presence];
     const conversationProtected = !participantsKnown || (participants.length > 0 && !atBreak);
-    if (prev && this.config.movementVerified && !this.suspended && destination && s.location && s.location !== destination && (atDesk || this.owner) && !conversationProtected && !this.pendingMove && s.canMove === true) {
+    if (allowMovement && prev && this.config.movementVerified && !this.suspended && destination && s.location && s.location !== destination && (atDesk || this.owner) && !conversationProtected && !this.pendingMove && s.canMove === true && (!s.movementCapabilities || s.movementCapabilities[presence] === true)) {
       this.pendingMove = { destination, startedAt: now };
       effects.push({ type: 'move', destination });
     }

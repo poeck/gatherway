@@ -139,6 +139,51 @@ update for profile-aware Wi-Fi reporting has been installed. Persistence and
 switching have automated checks; Paul's real restart and multi-home trials remain
 pending. Do not claim that measurements from older in-memory-only versions were
 recovered.
+Paul subsequently reported a successful threshold calculation: 120 valid seconds
+per group, 90% in-room and 72% other-room signal coverage, with -84/-90 dBm
+thresholds meeting the 6 dB minimum separation. Paul then reported approximately
+three minutes of stable "In your room" on the phone, followed by "Elsewhere at
+home" a few seconds after entering another room. This confirms an initial live
+outbound transition and the phone's presence display. After being asked to repeat
+room changes and returns, Paul reported several successful trials and explicitly
+accepted the current profile's room detection as good enough for now. Do not
+require further calibration trials before continuing the project. Exact transition
+times, carrying positions and long-session reliability were not recorded; leaving
+home and other presence profiles have not been accepted by this trial.
+The Android home page now separates actual Gather position from inferred presence,
+shows live diagnostics and recent changes, and keeps the companion start/stop
+control prominent. Pairing and permissions are on a separate Settings page.
+Manual destination requests require verified movement and individually tested
+saved destinations. Paul confirmed that the button internally named
+`leave-meeting-button` returned him to his desk outside a conversation and the
+phone showed "At your desk". Desk return is now implemented for that observed
+identity and desk, gated by no active conversation and confirmed arrival. Its
+programmatic desktop test subsequently moved Paul to the exact desk coordinates
+but failed its arrival confirmation. Position-only confirmation now retries
+temporary unreadable states during the walking animation within 15 seconds and
+reports specific failure diagnostics. The retry confirmed cancellation during the
+walk. Ordinary clicks, scrolling and typing now acknowledge alerts without
+canceling navigation; explicit movement input still cancels it. Same-document
+Gather route updates no longer count as disconnects, and diagnostics retain the
+specific interruption source. Paul confirmed the corrected desktop destination
+test returns to his desk without errors. Programmatic desk return and its arrival
+confirmation are now live-verified outside a conversation. Paul also confirmed
+the phone-triggered Go to desk trial, including return and arrival confirmation.
+Paul subsequently verified a guarded console call to
+`MoveController.moveSpaceUserToTile(user.position.updatedCopy(37, 59), floorId)`
+for brief-away movement. The native Position instance is required; a plain
+coordinate object failed. The supplied implementation shows that updatedCopy
+creates a separate instance. Paul then confirmed the same guarded movement to
+the break-room target (27, 51). Both routes are integrated as scoped native
+coordinate actions with independent arrival confirmation. The desktop's Set up
+coordinate movement action enables manual phone trials for these exact observed
+routes. Paul confirmed the requested phone sequence: Step away, Go to break room,
+and Go to desk. All three manual phone destinations are now live-verified outside
+conversations. Confirmed non-no-op phone movements
+count as destination checks, but do not enable automatic movement. Keep automatic
+movement disabled until Paul enables it. The first automatic room-transition
+trial remains pending, and movement from active break-room conversations is still
+unavailable in the current integration.
 Incoming waves have been
 received through the real Gather 2.0 integration. Conversation-state probes have
 been checked in locked, unlocked and absent conversations; the integrated reader

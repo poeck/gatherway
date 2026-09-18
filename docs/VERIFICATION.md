@@ -773,6 +773,185 @@ persistence, but not yet restart recovery of a recorded trial. Existing measurem
 the pre-update running instance have not been recovered or written to disk. No
 profile-dependent calibration or movement was enabled in his running desktop.
 
+## Successful calibration calculation reported by Paul
+
+Paul reported a completed trial with 120 seconds of valid monitoring per group:
+66 in-room samples with 90% signal coverage and 12 seconds without recent signal;
+42 other-room samples with 72% coverage and 34 seconds without recent signal.
+The weaker in-room signal was -84 dBm and the stronger other-room signal was
+-90 dBm, meeting the required 6 dB separation exactly. The application reported
+saved thresholds of -84 dBm for entering proximity and -90 dBm for leaving it,
+with sustained reception loss also allowing departure while monitoring is healthy.
+This passes the calibration calculation, not real room-transition acceptance.
+Stationary false switches, transition latency, and restart recovery of these
+recorded measurements remain to be verified. Automatic movement remains gated.
+
+## Android home dashboard implementation
+
+The companion now has separate Home and Settings pages. Home provides start/stop,
+observed Gather position, inferred presence, RSSI and its five-second median,
+pending presence transitions, override warnings, conversation participant count,
+connection diagnostics and 12 recent position/presence changes. Setup controls
+remain on Settings. Current values expire on connection loss instead of displaying
+stale state as live. No participant identities or conversation content are included
+in the dashboard or its history.
+
+Manual destination commands use the authenticated exchange and a bounded receipt
+ledger. They require a fresh matching session, a verified navigation capability
+and a destination previously tested on the desktop. Requests expire before delayed
+execution; delivery retries cannot restart the same navigation. Confirmation comes
+from the adapter's observed arrival. Automatic movement cannot compete with an
+active phone navigation request, while media safety remains active. The observed
+Gather 2.0 adapter still cannot move, so these controls remain unavailable in Paul's
+installation until navigation is verified.
+
+Validation: 125 desktop tests passed, desktop syntax and mobile TypeScript checks
+passed, and the Android release build plus six existing native unit tests passed.
+The APK was installed successfully with existing app data retained. On-device
+visual inspection was blocked by the sleeping/locked phone, so dashboard layout,
+Settings navigation, and fresh real desktop-to-phone dashboard values still need
+live confirmation after unlocking and restarting the desktop client. No avatar
+movement was attempted during these checks.
+
+## Initial live phone presence trial
+
+Paul reported approximately three minutes in his room with the phone continuously
+showing "In your room". After moving to another room, the display changed to
+"Elsewhere at home" within a few seconds. This confirms live presence delivery to
+the new phone dashboard, a short stable in-room period and one outbound room
+transition. The latency was estimated, not measured precisely. Return detection,
+repeated transitions, other carrying positions, leaving home and a full work
+session remain pending. This does not establish automatic movement readiness.
+Settings navigation and the other dashboard controls still need live confirmation.
+
+In a subsequent follow-up to the requested room-change and return trials, Paul
+reported several successful repetitions and explicitly accepted the behavior as
+good enough for now. Room detection is therefore user-accepted for the current
+presence profile. The exact number, timings and carrying positions were not
+recorded. Further calibration trials are not a prerequisite for continuing the
+project. This acceptance does not verify leaving home, other profiles, prolonged
+idle/battery behavior or Gather navigation. Movement remains disabled pending its
+separate capability and destination checks.
+
+## Observed desk-return control
+
+Paul supplied the `leave-meeting-button` HTML and confirmed that clicking it while
+outside a meeting/conversation returned his avatar to his desk; the phone then
+showed "At your desk". This establishes the action in that tested context despite
+its internal name. The implementation is scoped to the observed desk and identity,
+checks session/participants/assignment immediately before clicking, requires one
+visible enabled control, and confirms exact arrival. No assumptions are made about
+its behavior during a conversation. Destination capabilities are separate: desk
+support cannot enable brief-away or break-room movement. Desktop settings now
+provide **Set up desk return** and the existing destination test for the first
+programmatic trial. Already-at-destination tests cannot establish verification.
+
+133 desktop tests and syntax checks passed, including serialized page execution,
+conversation arrival before dispatch, changed ownership, hidden/duplicate controls,
+wrong origin, no-op arrival and interruption. The physical click is user-verified;
+the programmatic desktop test and phone-triggered return are still pending. No
+new APK is needed for this desktop-only integration change.
+
+## Desk-return arrival confirmation follow-up
+
+Paul reported that the desktop destination test walked his avatar back to the
+desk but returned the generic movement failure. His subsequent snapshot confirmed
+the exact configured desk coordinates, matching identity, no conversation and
+assigned-desk occupancy. The destination was correct. The return control was
+unavailable at the desk. The original error did not distinguish an interrupted
+check, temporary unreadable state or timeout, so the precise failure cause has
+not been established.
+
+Desk arrival now polls the position reader directly during the animation, retries
+temporary unreadable observations within the existing 15-second deadline, bounds
+each pending read by that deadline, and still rejects identity changes and
+interruption. It does not depend on the full UI snapshot or continued visibility
+of the return button. At the exact verified target, returning is a no-op even if
+Gather hides the button. Desktop settings display the last movement result,
+expected/observed position and a specific failure reason. No automatic movement
+or phone destination verification was granted from the failed test.
+
+135 tests and syntax checks passed, including delayed arrival after transient
+read failures, identity change and interruption. A live retry is still required
+to confirm this resolves Paul's failure and unlocks the phone action.
+
+## Movement interruption handling
+
+The live retry again reached the desk but reported that arrival confirmation was
+interrupted. Paul recalled only moving his cursor and explicitly requested that
+ordinary clicks and scrolling remain usable while walking. Cursor motion was
+already not forwarded by the preload. The existing cancellation rules nevertheless
+treated every forwarded interaction during a pending move as an interruption and
+every main-frame navigation event as a disconnect, including same-document route
+updates. The exact original triggering event remains unconfirmed.
+
+The controller now acknowledges ordinary clicking, typing and scrolling without
+invalidating navigation. Explicit movement keys and map-canvas double-clicks still
+invalidate it. Same-document updates within Gather retain the current document;
+document replacements, other origins, renderer failures and suspend still reset
+the session. Identity checks remain mandatory during arrival confirmation. Both
+modern Electron event properties and legacy positional arguments are supported.
+The first concrete interruption reason is retained in the movement diagnostic.
+
+140 tests passed, including real controller handler wiring, in-page versus document
+navigation, acknowledgement without interruption, explicit movement input and
+preload filtering of generated versus trusted events. Syntax checks passed. A live
+desktop retry and phone-triggered return are still pending.
+
+## Desktop and phone desk-return tests passed
+
+Paul confirmed that the corrected desktop destination test works without errors.
+This verifies the programmatic desk-return control and its arrival confirmation
+outside a conversation in his installation. Paul then confirmed the requested
+phone trial: Go to desk returned his avatar and showed the expected position and
+arrival confirmation. Brief-away and break-room navigation remain unverified, and full automatic
+movement remains disabled.
+
+## Native coordinate movement: brief-away trial
+
+Paul supplied the current MoveController method implementations and Position
+prototype. `moveSpaceUserToTile(position, floorId)` uses Gather's area/path routing.
+The first plain-object trial failed because the position requires `.hash()`.
+The supplied Position implementation establishes that `updatedCopy(x, y)` creates
+a separate native Position instance. Paul confirmed that passing
+`user.position.updatedCopy(37, 59)` and the verified current floor to
+`MoveController.moveSpaceUserToTile` succeeded in the guarded, outside-conversation
+brief-away trial. The requested phone position check was included in that trial.
+No minified class name or teleport operation is required by this approach.
+Break-room coordinate movement and integration into the destination buttons remain
+pending; this manual console trial does not enable automatic movement.
+
+## Native coordinate movement integration
+
+Paul confirmed that the same guarded call using `updatedCopy(27, 51)` reached the
+break-room position. The desktop now provides a scoped coordinate-movement preset
+for the two manually verified targets. Readiness checks only inspect methods and
+state. Dispatch creates an independent native Position, rechecks identity, floor
+and participants, calls Gather's normal movement wrapper, and confirms arrival
+through the position reader within the existing deadline. No raw movement packets,
+teleport calls, screen coordinates or minified identifiers are used.
+
+The phone may invoke these exact manually verified routes after setup. Unrelated
+identities and altered destinations cannot inherit that verification. Completed
+phone movements record destination checks only when movement was dispatched from
+another location and arrival was confirmed. Automatic movement remains off and
+requires all three integrated checks plus the explicit user enable action.
+
+150 desktop tests and syntax checks passed. New coverage includes native Position
+construction, preserved original coordinates, no-op behavior, method/type loss,
+floor and identity mismatch, conversation changes before dispatch, readonly
+capability reporting, and phone trial recording. The new phone-triggered brief-away
+and break-room trials remain pending. No APK update is required.
+
+## Manual phone destinations passed
+
+Paul confirmed the requested Step away, Go to break room and Go to desk sequence
+after setting up coordinate movement. This verifies the manual phone-to-desktop
+path and arrival confirmation for all three configured destinations outside
+conversations. It does not establish automatic movement or movement from an active
+break-room conversation; the latter remains blocked by the current integration's
+conversation guard. The first automatic room-change/return trial is pending.
+
 ## Still required
 
 - Complete and verify the Gather 2.0 profile. Media selectors, incoming waves and
@@ -787,7 +966,9 @@ profile-dependent calibration or movement was enabled in his running desktop.
 - Extend the initial alert trials to long idle periods,
   notification/full-screen presentation, cancellation, foreground
   services, screen-off BLE, Wi-Fi visibility, and battery use on physical devices.
-- Calibrate and validate real room transitions; capture and test actual destinations.
+- Capture and test actual movement destinations. Room detection for the current
+  presence profile is user-accepted; other homes and leaving-home detection still
+  require their own checks.
 - Run the colleague-based end-to-end acceptance checklist in `SETUP.md`.
 - Build/install the Nix package and verify desktop UI behavior in the user's session.
 

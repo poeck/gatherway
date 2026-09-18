@@ -45,7 +45,7 @@ test('media action reports a control that failed to disable', async () => {
 });
 test('movement confirms the actual destination and handles missing controls', async () => {
   const document = fixture(); const button = document.querySelector('[data-destination="break"]'); button.getClientRects = () => [{}]; button.click = () => document.querySelector('main').setAttribute('data-location', 'break');
-  const adapter = new GatherAdapter(null, { profile }); adapter.evaluate = async (fn, ...args) => fn(document, ...args); adapter.snapshot = async () => inspectGather(document, profile, expected);
+  const adapter = new GatherAdapter(null, { profile, ...expected }); adapter.evaluate = async (fn, ...args) => fn(document, ...args); adapter.snapshot = async () => inspectGather(document, profile, expected);
   assert.equal(await adapter.move('break'), true); button.remove(); assert.equal(await adapter.move('break'), false); assert.equal(await adapter.move('missing'), false);
 });
 

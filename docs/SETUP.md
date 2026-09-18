@@ -241,6 +241,71 @@ while retaining destination confirmation and manual-interruption handling.
 
 ## Calibration and behavior
 
+### Observed desk-return action
+
+Paul confirmed that the existing `leave-meeting-button` returns his avatar to his
+desk outside a conversation. In **3. Save your locations**, choose **Set up desk
+return** to register that observed action and desk target without replacing the
+rest of the integration profile. This setup is scoped to the observed identity,
+assigned desk and coordinates. It does not enable automatic movement.
+
+Move your avatar away from the desk, stay outside a conversation, then select
+**Own desk → Test destination**. The adapter clicks the unique visible enabled
+button and confirms arrival at the observed desk coordinates. It rechecks the
+session, participants and desk immediately before clicking. An already-at-target
+test is rejected because it would not prove navigation. After a successful test,
+the phone's **Go to desk** action becomes available outside conversations for the
+current verification session. The observed preset now also permits manual phone
+use based on Paul's completed desktop and phone desk-return trials.
+Ordinary clicks, typing and scrolling can continue during a return. Movement keys
+or a double-click on the map canvas interrupt it. In-page Gather route updates do
+not count as a disconnect; page reloads and genuine session changes still do.
+If a test fails, the diagnostic beneath the destination buttons includes its
+specific reason and last observed position.
+
+### Observed coordinate movement
+
+Paul verified the brief-away and break-room routes through Gather's own
+`moveSpaceUserToTile` method. It needs a native Position created by
+`user.position.updatedCopy(x, y)`, rather than a plain coordinate object.
+In **3. Save your locations**, choose **Set up coordinate movement** once to
+register those routes and saved targets without replacing the other integration
+settings. This preset only matches the observed identity, floor and target
+coordinates. It leaves automatic movement disabled.
+
+On the phone, outside a conversation, try **Step away**, **Go to break room**,
+then **Go to desk**. Each should confirm arrival at the saved position. The exact
+manually verified routes are allowed for these explicit phone trials; successful
+non-no-op phone movements also record adapter destination checks for the current
+session. Merely requesting a move or already being at a destination does not count.
+Full automatic movement still requires all three completed destination checks,
+calibration and the explicit enable action. Cross-floor navigation and movement
+from active conversations have not been verified and remain unavailable.
+
+The Android **Home** page separates **Gather position** (your observed avatar
+location) from **Real-world presence** (the phone-based availability estimate).
+It shows the latest and smoothed BLE signal, any pending presence transition,
+manual override warnings, and the latest 12 position/presence changes with times.
+Use this page while walking between rooms; the laptop screen does not need to be
+visible. History is kept in memory for the desktop monitoring session and clears
+when that session changes. After ten seconds without a phone exchange, live values
+become unavailable; any retained history is explicitly historical.
+
+**Start companion** / **Stop companion** stays on Home. Permissions, pairing,
+Firebase configuration and setup guidance are under **Settings**, with a Back to
+home button and Android back-button support. Updating the APK retains pairing.
+Restart the updated desktop client to provide the new dashboard data.
+
+**Go to desk**, **Step away** and **Go to break room** are explicit manual actions.
+Each requires fresh Gather state, a verified navigation capability and a saved
+destination supported by a completed test or the exact manually verified preset.
+They do not require enabling
+automatic movement or completing BLE calibration. Unavailable controls explain
+the missing prerequisite. A request is scoped to the current desktop session, expires
+after 15 seconds before execution, and is deduplicated across delivery retries.
+Success means that arrival was observed, not just that the request was sent.
+Selecting the break room manually does not give automation ownership of the break.
+
 Use **Presence profile** for different real-world places, such as Apartment and
 Parents. Enter a name and the exact home Wi-Fi SSID, then choose **Save profile
 details** to edit the selected profile or **Create new profile** for another place.

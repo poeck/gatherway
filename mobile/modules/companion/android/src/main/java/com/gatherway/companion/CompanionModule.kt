@@ -35,6 +35,7 @@ class CompanionModule : Module() {
       Unit
     }
     AsyncFunction("stop") { NativeStore.prefs(context).edit().putBoolean("enabled", false).apply(); context.stopService(Intent(context, CompanionService::class.java)); Alerts.cancelAll(context) }
+    AsyncFunction("move") { destination: String -> CompanionService.requestMove(destination) }
     AsyncFunction("status") {
       val manager = context.getSystemService(NotificationManager::class.java)
       val config = NativeStore.config(context)
@@ -42,6 +43,8 @@ class CompanionModule : Module() {
         "paired" to (config != null), "running" to CompanionService.running,
         "advertising" to CompanionService.advertising, "working" to CompanionService.working,
         "connection" to CompanionService.connection, "lastExchange" to CompanionService.lastExchange,
+        "exchangeAgeMs" to (if (CompanionService.lastExchangeElapsed > 0) android.os.SystemClock.elapsedRealtime() - CompanionService.lastExchangeElapsed else null),
+        "dashboard" to CompanionService.dashboard, "commandPending" to (CompanionService.pendingCommand != null), "commandMessage" to CompanionService.commandMessage,
         "wifi" to CompanionService.wifi(context).first, "currentSsid" to CompanionService.wifi(context).second,
         "homeWifi" to (NativeStore.prefs(context).getString("profileHomeWifi", null) ?: config?.optString("homeWifi")), "profileName" to NativeStore.prefs(context).getString("profileName", null), "notifications" to manager.areNotificationsEnabled(),
         "fullScreen" to (Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent()),

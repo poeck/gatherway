@@ -29,6 +29,7 @@ class Transport {
         const body = message.body;
         if (!body || !['home', 'away', 'unknown'].includes(body.wifi) || typeof body.bluetooth !== 'boolean' || typeof body.serviceRunning !== 'boolean' || !Array.isArray(body.acks) || body.acks.length > 100 || body.acks.some(id => typeof id !== 'string' || id.length > 100)) throw new Error('Invalid telemetry');
         if (body.fcmToken != null && (typeof body.fcmToken !== 'string' || body.fcmToken.length > 4096)) throw new Error('Invalid token');
+        if (body.command != null && (!body.command || typeof body.command !== 'object' || !/^[a-f0-9-]{36}$/.test(body.command.id || '') || !/^[a-f0-9-]{36}$/.test(body.command.session || '') || !['available', 'brief', 'away'].includes(body.command.destination) || !Number.isSafeInteger(body.command.createdAt))) throw new Error('Invalid phone command');
         if (body.wifiTelemetryVersion != null && (body.wifiTelemetryVersion !== 1 || !(body.wifiSsid === null || (typeof body.wifiSsid === 'string' && Buffer.byteLength(body.wifiSsid, 'utf8') <= 32)))) throw new Error('Invalid Wi-Fi telemetry');
         const state = await this.onExchange(body);
         const now = Date.now();

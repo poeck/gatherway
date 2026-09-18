@@ -32,6 +32,21 @@ class CompanionService : Service() {
     @Volatile var connection = "Stopped"
     @Volatile var working = false
     @Volatile var lastExchange = 0L
+    @Volatile var lastExchangeElapsed = 0L
+    @Volatile var dashboard: String? = null
+    @Volatile var pendingCommand: String? = null
+    @Volatile var commandMessage: String? = null
+    @Synchronized fun requestMove(destination: String) {
+      require(destination in listOf("available", "brief", "away")) { "Unknown destination" }
+      require(running && working && android.os.SystemClock.elapsedRealtime() - lastExchangeElapsed < 10000) { "Connect to your laptop first" }
+      require(pendingCommand == null) { "A request is already pending" }
+      val current = JSONObject(requireNotNull(dashboard) { "Update and restart the desktop client first" })
+      val moves = current.getJSONObject("moves")
+      require(moves.has(destination) && moves.isNull(destination)) { moves.optString(destination, "Movement unavailable") }
+      require(current.optJSONObject("command")?.optString("status") != "moving") { "Movement is already in progress" }
+      pendingCommand = JSONObject().put("id", java.util.UUID.randomUUID().toString()).put("session", current.getString("session")).put("destination", destination).put("createdAt", System.currentTimeMillis()).toString()
+      commandMessage = "Sending movement request…"
+    }
     fun wifi(context: Context): Pair<String, String?> {
       if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return "unknown" to null
       val manager = context.applicationContext.getSystemService(WifiManager::class.java)
@@ -127,6 +142,13 @@ class CompanionService : Service() {
     val acks = synchronized(Alerts) { prefs.getStringSet("acks", emptySet())!!.toSet() }
     val wifiState = wifi(this)
     val body = JSONObject().put("wifi", wifiState.first).put("wifiTelemetryVersion", 1).put("wifiSsid", wifiState.second ?: JSONObject.NULL).put("bluetooth", advertising).put("serviceRunning", running).put("acks", JSONArray(acks.toList())).put("fcmToken", prefs.getString("fcmToken", null))
+    synchronized(CompanionService) {
+      pendingCommand?.let { raw ->
+        val command = JSONObject(raw)
+        if (System.currentTimeMillis() - command.getLong("createdAt") > 15000) { pendingCommand = null; commandMessage = "Request timed out; check your position before trying again." }
+        else body.put("command", command)
+      }
+    }
     val message = Wire.packet("exchange", body)
     val endpoint = config.getString("endpoint"); NativeStore.validateEndpoint(endpoint)
     val connection = URI(endpoint.trimEnd('/') + "/v1/exchange").toURL().openConnection() as HttpURLConnection
@@ -141,6 +163,11 @@ class CompanionService : Service() {
       val result = response.getJSONObject("body"); require(result.getString("requestId") == message.getString("id"))
       if (!running || !prefs.getBoolean("enabled", false)) return
       val state = result.getJSONObject("state")
+      synchronized(CompanionService) {
+        dashboard = state.optJSONObject("dashboard")?.toString()
+        val receipt = state.optJSONObject("dashboard")?.optJSONObject("command")
+        pendingCommand?.let { if (receipt?.optString("id") == JSONObject(it).getString("id")) { pendingCommand = null; commandMessage = null } }
+      }
       val profile = state.optJSONObject("presenceProfile")
       if (profile != null) {
         val name = profile.getString("name"); val home = profile.getString("homeWifi")
@@ -148,12 +175,12 @@ class CompanionService : Service() {
         if (prefs.getString("profileName", null) != name || prefs.getString("profileHomeWifi", null) != home) prefs.edit().putString("profileName", name).putString("profileHomeWifi", home).apply()
       } else if (prefs.contains("profileName")) prefs.edit().remove("profileName").remove("profileHomeWifi").apply()
       working = state.optBoolean("working")
-      lastExchange = System.currentTimeMillis(); CompanionService.connection = if (working) "Connected · working" else "Connected · waiting for Gather"
+      lastExchange = System.currentTimeMillis(); lastExchangeElapsed = android.os.SystemClock.elapsedRealtime(); CompanionService.connection = if (working) "Connected · working" else if (state.optBoolean("paused")) "Connected · desktop paused" else "Connected · waiting for Gather"
       synchronized(Alerts) { val remaining = prefs.getStringSet("acks", emptySet())!!.toMutableSet(); remaining.removeAll(acks); prefs.edit().putStringSet("acks", remaining).apply() }
       val events = result.getJSONArray("events")
       for (index in 0 until events.length()) Alerts.receive(this, events.getJSONObject(index))
       if (!working) stopAdvertising()
     } finally { connection.disconnect() }
   }
-  override fun onDestroy() { running = false; working = false; executor.shutdownNow(); stopAdvertising(); connection = "Stopped — open the app to restart"; super.onDestroy() }
+  override fun onDestroy() { running = false; working = false; synchronized(CompanionService) { pendingCommand = null; commandMessage = null; dashboard = null }; executor.shutdownNow(); stopAdvertising(); connection = "Stopped — open the app to restart"; super.onDestroy() }
 }

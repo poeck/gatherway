@@ -50,5 +50,39 @@
     },
     "deskId": "38903d20-a8d4-4e4d-9ecb-e7b20a08314f"
   },
-  "destinations": {}
+  "destinations": {},
+  "navigation": {
+    "desk": {
+      "source": "observed-desk-button",
+      "scope": {
+        "spaceId": "b7166eb2-465a-45fc-bbc7-86451a16e7a8",
+        "selfId": "91f71d53-b930-442d-b9dc-7196af2a70d3"
+      },
+      "deskId": "38903d20-a8d4-4e4d-9ecb-e7b20a08314f",
+      "target": {
+        "floorId": "054a3e33-6434-49a4-8d0a-f1b18fccd197",
+        "x": 37,
+        "y": 61
+      }
+    },
+    "coordinates": {
+      "source": "gather-move-controller-v1",
+      "scope": {
+        "spaceId": "b7166eb2-465a-45fc-bbc7-86451a16e7a8",
+        "selfId": "91f71d53-b930-442d-b9dc-7196af2a70d3"
+      },
+      "targets": {
+        "brief": {
+          "floorId": "054a3e33-6434-49a4-8d0a-f1b18fccd197",
+          "x": 37,
+          "y": 59
+        },
+        "away": {
+          "floorId": "054a3e33-6434-49a4-8d0a-f1b18fccd197",
+          "x": 27,
+          "y": 51
+        }
+      }
+    }
+  }
 }

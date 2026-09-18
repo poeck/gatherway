@@ -10,6 +10,9 @@ const { Transport, tailnetAddress } = require('./transport');
 const { Fcm } = require('./fcm');
 const { BleScanner } = require('./ble');
 const { GatherAdapter } = require('./adapter');
+const { MobileDashboard } = require('./mobile-dashboard');
+const { installObservedDeskAction, installObservedCoordinateActions } = require('./gather-navigation');
+const { resetsGatherDocument, movementInterruption } = require('./navigation-lifecycle');
 
 class Controller {
   constructor(app, win) {
@@ -25,12 +28,14 @@ class Controller {
       this.presence.observe(rssi, now); this.lastRssi = rssi; this.lastRssiAt = now;
       this.calibration.observe(rssi, now, this.calibrationIssue(now));
     }, healthy => { if (!healthy) this.calibration.invalidate('Bluetooth scanning unavailable'); });
+    this.mobileDashboard = new MobileDashboard(this);
     this.ble.start(); this.startTransport();
     ipcMain.on('gatherway:interaction', (event, input) => {
       if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || !this.adapter.validOrigin()) return;
       this.effects(this.engine.interact(Date.now()));
       this.cancelTests();
-      if (input?.movement || this.adapter.pending) { this.adapter.invalidate(); this.engine.manualMovement(); }
+      const interruption = movementInterruption(input);
+      if (interruption) { this.adapter.invalidate(interruption); this.engine.manualMovement(); }
     });
     ipcMain.handle('gatherway:settings', async (event, command, payload) => {
       if (!this.settings || event.sender !== this.settings.webContents || event.senderFrame !== this.settings.webContents.mainFrame || !event.senderFrame.url.startsWith('file:')) throw new Error('Invalid sender');
@@ -41,8 +46,10 @@ class Controller {
       this.presenceProfiles.checkpoint();
       this.tick();
     }, 1000);
-    win.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) this.disconnect(); });
-    win.webContents.on('render-process-gone', () => this.disconnect());
+    win.webContents.on('did-start-navigation', (details, url, isInPlace, isMainFrame) => {
+      if (resetsGatherDocument(details, url, isInPlace, isMainFrame)) this.disconnect('Gather document navigation started');
+    });
+    win.webContents.on('render-process-gone', () => this.disconnect('Gather renderer stopped'));
   }
   get collecting() { return this.calibration.active; }
   activatePresenceProfile() {
@@ -69,7 +76,8 @@ class Controller {
         this.effects(this.engine.acknowledge(id));
         if (this.testAlerts.delete(id)) this.effects([{ type: 'cancel', id, reason: 'acknowledged' }]);
       }
-      return { working: !this.suspended && !this.config.paused && (!!this.collecting || (!!this.snapshot?.connected && this.config.adapterVerified)), paused: this.config.paused, availability: this.availability, presenceProfile: { name: this.presenceProfiles.active.name, homeWifi: this.presenceProfiles.active.homeWifi } };
+      this.mobileDashboard.accept(body.command);
+      return { working: !this.suspended && !this.config.paused && (!!this.collecting || (!!this.snapshot?.connected && this.config.adapterVerified)), paused: this.config.paused, availability: this.availability, dashboard: this.mobileDashboard.state(), presenceProfile: { name: this.presenceProfiles.active.name, homeWifi: this.presenceProfiles.active.homeWifi } };
     }, () => this.store.log('transport-unavailable'));
     this.transport.start();
   }
@@ -81,13 +89,15 @@ class Controller {
       const snapshot = await this.adapter.snapshot();
       if (generation !== this.adapter.generation || this.suspended) return;
       this.snapshot = snapshot;
+      this.snapshotAt = Date.now();
       for (const [id, expiry] of this.testAlerts) if (Date.now() >= expiry) { this.testAlerts.delete(id); this.effects([{ type: 'cancel', id, reason: 'expired' }]); }
       this.availability = this.override || this.presence.update(this.phone, this.ble.healthy, Date.now());
       const phoneFresh = this.phone && Date.now() - this.phone.receivedAt <= 10000;
       const enabled = !this.config.paused && this.config.adapterVerified;
       // A fresh baseline is required after reconnect. Media safety can still operate without the phone.
       const classification = phoneFresh || this.override ? this.availability : 'unknown';
-      this.effects(this.engine.update(this.snapshot, classification, Date.now(), enabled));
+      this.effects(this.engine.update(this.snapshot, classification, Date.now(), enabled, !this.mobileDashboard.moving));
+      this.mobileDashboard.observe(Date.now());
     } catch { if (generation === this.adapter.generation) { this.snapshot = null; this.effects(this.engine.cancelAll()); } }
     finally { this.ticking = false; }
   }
@@ -113,8 +123,8 @@ class Controller {
     }
   }
   cancelTests() { for (const id of this.testAlerts.keys()) this.effects([{ type: 'cancel', id, reason: 'acknowledged' }]); this.testAlerts.clear(); }
-  disconnect() { this.adapter.disconnect(); this.effects(this.engine.cancelAll()); this.cancelTests(); this.presence.reset(); this.calibration.stop('Connection changed; resume collection when ready'); this.presenceProfiles?.checkpoint(); this.phone = null; this.snapshot = null; this.availability = 'unknown'; }
-  suspend() { this.suspended = true; this.disconnect(); }
+  disconnect(reason = 'Desktop session reset') { this.adapter.disconnect(reason); this.mobileDashboard?.reset(); this.effects(this.engine.cancelAll()); this.cancelTests(); this.presence.reset(); this.calibration.stop('Connection changed; resume collection when ready'); this.presenceProfiles?.checkpoint(); this.phone = null; this.snapshot = null; this.availability = 'unknown'; }
+  suspend() { this.suspended = true; this.disconnect('Laptop suspended'); }
   resume() { this.disconnect(); this.suspended = false; }
   showSettings() {
     if (this.settings && !this.settings.isDestroyed()) { this.settings.show(); this.settings.focus(); return; }
@@ -128,7 +138,7 @@ class Controller {
     return {
       config: { ...this.config, key: undefined, firebasePath: undefined }, firebaseConfigured: !!this.config.firebasePath,
       phone: this.phone ? { ...this.phone, fcmToken: undefined } : null,
-      snapshot: this.snapshot, availability: this.availability, automatic: this.engine.owner, override: this.override,
+      snapshot: this.snapshot, navigation: this.adapter.lastMovement || null, availability: this.availability, automatic: this.engine.owner, override: this.override,
       transport: this.transport.status, bluetooth: this.ble.status, fcm: this.fcm.status,
       lastRssi: Date.now() - this.lastRssiAt < 5000 ? this.lastRssi : null,
       collecting: this.collecting, calibration: this.calibration.state(Date.now()),
@@ -174,10 +184,17 @@ class Controller {
         this.snapshot = await this.adapter.snapshot();
         if (!this.snapshot.connected || !this.snapshot.location) throw new Error('Gather location is unavailable');
         this.config.locations[payload] = this.snapshot.location; this.config.movementVerified = false; this.store.save(); break;
+      case 'setup-desk-action':
+        this.disconnect(); installObservedDeskAction(this.config); this.testedDestinations = new Set(); this.store.save(); break;
+      case 'setup-coordinate-actions':
+        this.disconnect(); installObservedCoordinateActions(this.config); this.testedDestinations = new Set(); this.store.save(); break;
       case 'test-destination': {
         const destination = this.config.locations[payload];
         if (!this.config.adapterVerified || !destination) throw new Error('Verify the adapter and capture this destination first');
-        if (!await this.adapter.move(destination)) throw new Error('Movement did not reach the saved destination');
+        const before = await this.adapter.snapshot();
+        if (!before.connected || !before.location || before.location === destination) throw new Error('Move away from this destination before testing its return action');
+        this.engine.manualMovement();
+        if (!await this.adapter.move(destination)) throw new Error(this.adapter.lastMovement?.reason || 'Movement did not reach the saved destination');
         this.testedDestinations ??= new Set(); this.testedDestinations.add(destination); break;
       }
       case 'enable-movement':

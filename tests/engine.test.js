@@ -186,3 +186,19 @@ test('reconnect and desk-feed recovery baseline existing desk visitors without r
   engine.update(state({ location: 'near-desk', deskVisitors: null }), 'brief', 3000);
   assert.deepEqual(engine.update(visit, 'brief', 4000), []);
 });
+
+test('manual phone navigation blocks competing automatic moves but keeps media safety active', () => {
+  const engine = new Engine(config);
+  const live = state({ mic: true, camera: true });
+  engine.update(live, 'brief', 1000, true, false);
+  const effects = engine.update(live, 'brief', 11000, true, false);
+  assert.equal(select(effects, 'move').length, 0);
+  assert.equal(select(effects, 'disable-media').length, 1);
+});
+
+test('a desk-only capability cannot trigger automatic movement to another destination', () => {
+  const engine = new Engine(config);
+  const s = state({ movementCapabilities: { available: true, brief: false, away: false } });
+  engine.update(s, 'brief', 1000);
+  assert.equal(select(engine.update(s, 'brief', 2000), 'move').length, 0);
+});
